@@ -8,6 +8,11 @@ import { UpdateUserDto } from './dtos/update-user.dto';
 import { plainToInstance } from 'class-transformer';
 import * as bcrypt from 'bcrypt';
 import { AdminUserResponseDto } from './dtos/admin-user-response.dto';
+import { PaginationQueryDto } from './../../common/dtos/pagination-query.dto';
+import {
+  buildPaginationMeta,
+  getOffset,
+} from './../../common/utils/pagination.util';
 
 @Injectable()
 export class UsersService {
@@ -97,16 +102,27 @@ export class UsersService {
   }
 
   // find all users
-  async findAllUsers(): Promise<AdminUserResponseDto[]> {
-    const users = await this.userRepository.find({
+  async findAllUsers(paginationQuery: PaginationQueryDto) {
+    const { page, limit } = paginationQuery;
+    const offset = getOffset(page, limit);
+
+    const [users, totalItems] = await this.userRepository.findAndCount({
       withDeleted: true,
+      skip: offset,
+      take: limit,
+      order: { createdAt: 'DESC' },
     });
 
-    return users.map((user) =>
+    const data = users.map((user) =>
       plainToInstance(AdminUserResponseDto, user, {
         excludeExtraneousValues: true,
       }),
     );
+
+    return {
+      data,
+      pagination: buildPaginationMeta(page, limit, totalItems),
+    };
   }
 
   // find user by id

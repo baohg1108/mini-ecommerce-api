@@ -9,12 +9,13 @@ import {
   Get,
   Patch,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dtos/create-user.dto';
 import { UserResponseDto } from './dtos/user-response.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
-import { AdminUserResponseDto } from './dtos/admin-user-response.dto';
+import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
 
 @Controller('users')
 export class UsersController {
@@ -63,8 +64,8 @@ export class UsersController {
   // find all
   @Get()
   @HttpCode(HttpStatus.OK)
-  findAllUsers(): Promise<AdminUserResponseDto[]> {
-    return this.usersService.findAllUsers();
+  findAllUsers(@Query() paginationDto: PaginationQueryDto) {
+    return this.usersService.findAllUsers(paginationDto);
   }
 
   // find user by id
