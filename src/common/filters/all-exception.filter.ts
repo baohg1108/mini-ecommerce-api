@@ -1,4 +1,3 @@
-// src/common/filters/all-exceptions.filter.ts
 import {
   ArgumentsHost,
   Catch,
@@ -7,6 +6,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
+
+interface HttpExceptionResponseBody {
+  message?: string | string[];
+  code?: string;
+}
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -18,15 +22,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const status = exception.getStatus();
       const responseBody = exception.getResponse();
 
+      const body: HttpExceptionResponseBody =
+        typeof responseBody === 'string' ? {} : responseBody;
+
       const message =
         typeof responseBody === 'string'
           ? responseBody
-          : (responseBody as any).message || exception.message;
+          : (body.message ?? exception.message);
 
       return res.status(status).json({
         success: false,
         error: {
-          code: (responseBody as any).code || exception.name,
+          code: body.code ?? exception.name,
           message: Array.isArray(message) ? message.join(', ') : message,
         },
       });
