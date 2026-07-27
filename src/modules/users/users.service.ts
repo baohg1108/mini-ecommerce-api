@@ -23,15 +23,13 @@ export class UsersService {
   // create user
   async createUser(createUserDto: CreateUserDto): Promise<UserResponseDto> {
     const { password, ...userData } = createUserDto;
-
-    const saltRounds = 12;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
+    const SALT_ROUNDS = 12;
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     const user = this.userRepository.create({
       ...userData,
       passwordHash,
     });
-
     const savedUser = await this.userRepository.save(user);
 
     return plainToInstance(UserResponseDto, savedUser, {
@@ -149,5 +147,10 @@ export class UsersService {
     return plainToInstance(UserResponseDto, user, {
       excludeExtraneousValues: true,
     });
+  }
+
+  // find user by email — check is exist
+  async findUserByEmailOrNull(email: string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { email } });
   }
 }
