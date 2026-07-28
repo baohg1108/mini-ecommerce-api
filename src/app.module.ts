@@ -8,6 +8,7 @@ import { RedisCacheModule } from './modules/redis/redis-cache.module';
 import { RedisClientModule } from './modules/redis/redis-client.module';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { ProductImageController } from './modules/products/product-image/product-image.controller';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ProductImageController } from './modules/products/product-image/product
     RedisCacheModule,
     RedisClientModule,
     CloudinaryModule,
+    AuthModule,
   ],
   controllers: [ProductImageController],
 })

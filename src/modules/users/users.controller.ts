@@ -83,4 +83,11 @@ export class UsersController {
   findUserByEmail(@Param('email') email: string) {
     return this.usersService.findUserByEmail(email);
   }
+
+  // find user by email (or null)
+  @Get('email/:email')
+  @HttpCode(HttpStatus.OK)
+  findUserByEmailOrNull(@Param('email') email: string) {
+    return this.usersService.findUserByEmail(email);
+  }
 }
