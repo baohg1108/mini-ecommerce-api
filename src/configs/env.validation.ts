@@ -26,6 +26,20 @@ export const envSchema = z.object({
   // Jwt configuration
   JWT_SECRET: z.string().trim().min(32).max(255),
   JWT_EXPIRES_IN: z.string().trim().min(1).max(255).default('1h'),
+  JWT_ACCESS_TOKEN_SECRET: z.string().trim().min(32).max(255),
+  JWT_REFRESH_TOKEN_SECRET: z.string().trim().min(32).max(255),
+  JWT_ACCESS_TOKEN_EXPIRATION_TIME: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .default('1h'),
+  JWT_REFRESH_TOKEN_EXPIRATION_TIME: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .default('7d'),
 });
 
 export type EnvSchema = z.infer<typeof envSchema>;
