@@ -13,6 +13,11 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(255)
+  refreshToken?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MinLength(2)
   @MaxLength(100)
   fullName?: string;

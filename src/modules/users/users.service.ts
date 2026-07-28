@@ -136,6 +136,11 @@ export class UsersService {
     });
   }
 
+  // find user by id (raw entity)
+  async findUserByIdOrNull(id: string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { id } });
+  }
+
   // find user by email
   async findUserByEmail(email: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({ where: { email } });
