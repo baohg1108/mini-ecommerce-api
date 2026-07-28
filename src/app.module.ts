@@ -4,6 +4,10 @@ import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { validateEnv } from './configs/env.validation';
 import databaseConfig from './configs/database.config';
 import { UsersModule } from './modules/users/users.module';
+import { RedisCacheModule } from './modules/redis/redis-cache.module';
+import { RedisClientModule } from './modules/redis/redis-client.module';
+import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
+import { ProductImageController } from './modules/products/product-image/product-image.controller';
 
 @Module({
   imports: [
@@ -23,6 +27,10 @@ import { UsersModule } from './modules/users/users.module';
       },
     }),
     UsersModule,
+    RedisCacheModule,
+    RedisClientModule,
+    CloudinaryModule,
   ],
+  controllers: [ProductImageController],
 })
 export class AppModule {}
