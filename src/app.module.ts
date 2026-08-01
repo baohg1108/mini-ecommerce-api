@@ -10,6 +10,7 @@ import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { ProductImageController } from './modules/products/product-image/product-image.controller';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoryModule } from './modules/categogies/category.module';
+import { ProductModule } from './modules/products/product.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { CategoryModule } from './modules/categogies/category.module';
     CloudinaryModule,
     AuthModule,
     CategoryModule,
+    ProductModule,
   ],
   controllers: [ProductImageController],
 })
