@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, Repository, IsNull } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { Category } from './entities/category.entity';
 import { CategoryStatus } from '../../common/enums/category-status.enum';
 
@@ -23,22 +26,68 @@ interface MoveCategoryDto {
   newParentId: string | null;
 }
 
+export interface CategoryTreeNode extends Category {
+  children: CategoryTreeNode[];
+}
+
+const PUBLIC_TREE_CACHE_KEY = 'categories:public:tree';
+const PUBLIC_TREE_CACHE_TTL = 60 * 5 * 1000;
+
 @Injectable()
 export class CategoryService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepo: Repository<Category>,
     private readonly dataSource: DataSource,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
 
+  async getPublicTree(): Promise<CategoryTreeNode[]> {
+    const cached = await this.cacheManager.get<CategoryTreeNode[]>(
+      PUBLIC_TREE_CACHE_KEY,
+    );
+    if (cached) return cached;
+
+    const rows = await this.categoryRepo.find({
+      where: { status: CategoryStatus.ACTIVE },
+      order: { displayOrder: 'ASC' },
+    });
+
+    const tree = this.buildTree(rows, null);
+    await this.cacheManager.set(
+      PUBLIC_TREE_CACHE_KEY,
+      tree,
+      PUBLIC_TREE_CACHE_TTL,
+    );
+
+    return tree;
+  }
+
+  private buildTree(
+    rows: Category[],
+    parentId: string | null,
+  ): CategoryTreeNode[] {
+    return rows
+      .filter((r) => r.parentId === parentId)
+      .map((r) => ({
+        ...r,
+        children: this.buildTree(rows, r.id),
+      }));
+  }
+
+  private async invalidatePublicCache(): Promise<void> {
+    await this.cacheManager.del(PUBLIC_TREE_CACHE_KEY);
+  }
+
   async create(dto: CreateCategoryDto): Promise<Category> {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       if (dto.parentId) {
         const parent = await manager.findOne(Category, {
           where: { id: dto.parentId },
         });
         if (!parent) {
-          throw new NotFoundException('Không tìm thấy danh mục cha');
+          throw new NotFoundException('Parent category not found');
         }
       }
 
@@ -46,7 +95,7 @@ export class CategoryService {
         where: { slug: dto.slug },
       });
       if (existing) {
-        throw new ConflictException('Slug đã tồn tại');
+        throw new ConflictException('Slug already exists');
       }
 
       const category = manager.create(Category, {
@@ -60,13 +109,16 @@ export class CategoryService {
 
       return manager.save(Category, category);
     });
+
+    await this.invalidatePublicCache();
+    return result;
   }
 
   async getSubtree(categoryId: string): Promise<Category[]> {
     const node = await this.categoryRepo.findOne({
       where: { id: categoryId },
     });
-    if (!node) throw new NotFoundException('Không tìm thấy danh mục');
+    if (!node) throw new NotFoundException('Category not found');
 
     return this.categoryRepo.manager.query(
       `
@@ -94,7 +146,7 @@ export class CategoryService {
     const node = await this.categoryRepo.findOne({
       where: { id: categoryId },
     });
-    if (!node) throw new NotFoundException('Không tìm thấy danh mục');
+    if (!node) throw new NotFoundException('Category not found');
 
     const rows: Category[] = await this.categoryRepo.manager.query(
       `
@@ -127,38 +179,41 @@ export class CategoryService {
     const category = await this.categoryRepo.findOne({
       where: { id: categoryId },
     });
-    if (!category) throw new NotFoundException('Không tìm thấy danh mục');
+    if (!category) throw new NotFoundException('Category not found');
 
     if (dto.slug && dto.slug !== category.slug) {
       const existing = await this.categoryRepo.findOne({
         where: { slug: dto.slug },
       });
-      if (existing) throw new ConflictException('Slug đã tồn tại');
+      if (existing) throw new ConflictException('Slug already exists');
     }
 
     Object.assign(category, dto);
-    return this.categoryRepo.save(category);
+    const result = await this.categoryRepo.save(category);
+
+    await this.invalidatePublicCache();
+    return result;
   }
 
   async move(dto: MoveCategoryDto): Promise<void> {
     const { categoryId, newParentId } = dto;
 
     if (categoryId === newParentId) {
-      throw new BadRequestException('Danh mục không thể là cha của chính nó');
+      throw new BadRequestException('Category cannot be its own parent');
     }
 
     await this.dataSource.transaction(async (manager) => {
       const node = await manager.findOne(Category, {
         where: { id: categoryId },
       });
-      if (!node) throw new NotFoundException('Không tìm thấy danh mục');
+      if (!node) throw new NotFoundException('Category not found');
 
       if (newParentId) {
         const newParent = await manager.findOne(Category, {
           where: { id: newParentId },
         });
         if (!newParent) {
-          throw new NotFoundException('Không tìm thấy danh mục cha mới');
+          throw new NotFoundException('Parent category not found');
         }
 
         const ancestorRows: { id: string; parent_id: string | null }[] =
@@ -178,7 +233,7 @@ export class CategoryService {
         const isCycle = ancestorRows.some((row) => row.id === categoryId);
         if (isCycle) {
           throw new BadRequestException(
-            'Không thể di chuyển danh mục vào chính nhánh con của nó',
+            'Category cannot be moved into its own subtree',
           );
         }
       }
@@ -186,6 +241,8 @@ export class CategoryService {
       node.parentId = newParentId;
       await manager.save(Category, node);
     });
+
+    await this.invalidatePublicCache();
   }
 
   async remove(categoryId: string): Promise<void> {
@@ -194,9 +251,11 @@ export class CategoryService {
     });
     if (childCount > 0) {
       throw new ConflictException(
-        'Không thể xoá danh mục còn danh mục con, hãy xoá/di chuyển con trước',
+        'Cannot delete category with child categories, please delete/move children first',
       );
     }
     await this.categoryRepo.delete(categoryId);
+
+    await this.invalidatePublicCache();
   }
 }

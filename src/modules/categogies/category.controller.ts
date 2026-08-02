@@ -14,10 +14,16 @@ import { UpdateCategoryDto } from './dtos/update-category.dto';
 import { MoveCategoryDto } from './dtos/move-category';
 import { CategoryQueryDto } from '../../common/dtos/category-query.dto';
 import { CategoryResponseDto } from './dtos/category.response.dto';
+import { CategoryTreeNode } from './category.service';
 
 @Controller('categories')
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
+
+  @Get('tree')
+  async getPublicTree(): Promise<CategoryTreeNode[]> {
+    return this.categoryService.getPublicTree();
+  }
 
   @Post()
   async create(@Body() dto: CreateCategoryDto): Promise<CategoryResponseDto> {
