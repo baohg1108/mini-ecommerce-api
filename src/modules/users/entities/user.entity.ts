@@ -75,7 +75,7 @@ export class User {
     type: 'timestamptz',
     nullable: true,
   })
-  emailVerifiedAt?: Date;
+  emailVerifiedAt!: Date | null;
 
   @Column({
     name: 'last_login_at',
