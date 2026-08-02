@@ -150,13 +150,28 @@ Theo tài liệu:
 
 ### Category
 
-N/A
+- POST /categories
+- GET /categories/tree
+- GET /categories?parentId=
+- GET /categories/:id/subtree
+- GET /categories/:id/ancestors
+- PATCH /categories/:id
+- PATCH /categories/:id/move
+- DELETE /categories/:id
 
 ### Upload
 
-N/A
+- POST /products/avatar
+- POST /products/:id/images
 
----
+### Product
+
+**Admin**
+
+- GET /products/admin/review
+- PATCH /products/admin/:id/approve
+- PATCH /products/admin/:id/reject
+- PATCH /products/admin/:id/remove
 
 # Risks / Issues
 
