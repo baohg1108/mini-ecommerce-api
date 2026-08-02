@@ -14,3 +14,7 @@ export function buildPaginationMeta(
 export function getOffset(page: number, limit: number): number {
   return (page - 1) * limit;
 }
+
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
