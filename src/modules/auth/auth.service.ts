@@ -14,6 +14,7 @@ import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
 import { TokenPair } from './interfaces/token-pair.interface';
 import { AuthResponse } from './interfaces/auth-response.interface';
+import { normalizeEmail } from '../../common/utils/pagination.util';
 
 @Injectable()
 export class AuthService {
@@ -25,9 +26,9 @@ export class AuthService {
 
   // register
   async register(registerDto: RegisterDto): Promise<UserResponseDto> {
-    const existingUser = await this.usersService.findUserByEmailOrNull(
-      registerDto.email,
-    );
+    const normalizedEmail = normalizeEmail(registerDto.email);
+    const existingUser =
+      await this.usersService.findUserByEmailOrNull(normalizedEmail);
 
     if (existingUser) {
       throw new ConflictException('Email already exists');
@@ -35,14 +36,16 @@ export class AuthService {
 
     return this.usersService.createUser({
       ...registerDto,
+      email: normalizedEmail,
     });
   }
 
   // login
   async login(loginDto: LoginDto): Promise<AuthResponse> {
-    const { email, password } = loginDto;
+    const normalizedEmail = normalizeEmail(loginDto.email);
+    const { password } = loginDto;
 
-    const user = await this.usersService.findUserByEmailOrNull(email);
+    const user = await this.usersService.findUserByEmailOrNull(normalizedEmail);
     if (!user) {
       throw new UnauthorizedException('Email or password is incorrect');
     }
