@@ -12,7 +12,7 @@ import { RegisterDto } from './dtos/register.dto';
 import { UserResponseDto } from '../users/dtos/user-response.dto';
 import { LoginDto } from './dtos/login.dto';
 import { AuthResponse } from './interfaces/auth-response.interface';
-import { Public } from '../../common/decorators/public.decorator';
+import { IsPublic } from '../../common/decorators/public.decorator';
 import { TokenPair } from './interfaces/token-pair.interface';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { RefreshTokenGuard } from '../../common/guards/refresh-token.guard';
@@ -25,7 +25,7 @@ export class AuthController {
 
   // register
   @Post('register')
-  @Public()
+  @IsPublic()
   @HttpCode(HttpStatus.CREATED)
   register(@Body() registerDto: RegisterDto): Promise<UserResponseDto> {
     return this.authService.register(registerDto);
@@ -33,7 +33,7 @@ export class AuthController {
 
   // login
   @Post('login')
-  @Public()
+  @IsPublic()
   @HttpCode(HttpStatus.OK)
   login(@Body() loginDto: LoginDto): Promise<AuthResponse> {
     return this.authService.login(loginDto);

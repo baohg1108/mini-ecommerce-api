@@ -92,6 +92,7 @@ export class UsersService {
   }
 
   // hard delete user
+  // @IsPublic()
   async hardDeleteUser(id: string): Promise<void> {
     const user = await this.userRepository.findOne({
       where: { id },
