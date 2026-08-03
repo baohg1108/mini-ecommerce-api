@@ -15,6 +15,7 @@ import { ProductModule } from './modules/products/product.module';
 import { ShopModule } from './modules/shops/shop.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AccessTokenGuard } from './common/guards/access-token.guard';
+import { SeedModule } from './databases/seeds/seed.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AccessTokenGuard } from './common/guards/access-token.guard';
     CategoryModule,
     ProductModule,
     ShopModule,
+    SeedModule,
   ],
   controllers: [ProductImageController],
   providers: [

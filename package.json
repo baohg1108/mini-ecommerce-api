@@ -21,7 +21,8 @@
     "migration:generate": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:generate -d src/configs/typeorm-cli.config.ts",
     "migration:run": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run -d src/configs/typeorm-cli.config.ts",
     "migration:revert": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:revert -d src/configs/typeorm-cli.config.ts",
-    "migration:show": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:show -d src/configs/typeorm-cli.config.ts"
+    "migration:show": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:show -d src/configs/typeorm-cli.config.ts",
+    "seed": "ts-node -r tsconfig-paths/register src/databases/seeds/seed.ts"
   },
   "dependencies": {
     "@keyv/redis": "^5.1.6",
