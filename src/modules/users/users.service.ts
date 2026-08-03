@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -13,6 +18,7 @@ import {
   buildPaginationMeta,
   getOffset,
 } from './../../common/utils/pagination.util';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 @Injectable()
 export class UsersService {
@@ -157,5 +163,33 @@ export class UsersService {
   // find user by email — check is exist
   async findUserByEmailOrNull(email: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { email } });
+  }
+
+  // become to seller
+  async becomeToSeller(id: string): Promise<UserResponseDto> {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    if (!user) {
+      throw new NotFoundException(`User with id ${id} not found`);
+    }
+
+    // i can write if (user.role !== UserRole.CUSTOMER) but i want to be more specific and clear
+    // alow-list
+    if (user.role === UserRole.SELLER) {
+      throw new ConflictException(`User with id ${id} is already a seller`);
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      throw new ForbiddenException(
+        `Admin accounts cannot be converted into seller accounts`,
+      );
+    }
+
+    user.role = UserRole.SELLER;
+    const updatedUser = await this.userRepository.save(user);
+
+    return plainToInstance(UserResponseDto, updatedUser, {
+      excludeExtraneousValues: true,
+    });
   }
 }
