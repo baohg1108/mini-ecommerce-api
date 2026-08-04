@@ -166,6 +166,35 @@ export class ProductService {
     await this.productRepo.softDelete(product.id);
   }
 
+  async hide(sellerId: string, productId: string): Promise<Product> {
+    const product = await this.findOwnedBySeller(sellerId, productId);
+
+    if (
+      product.status !== ProductStatus.ACTIVE &&
+      product.status !== ProductStatus.OUT_OF_STOCK
+    ) {
+      throw new BadRequestException(
+        'Only active or out-of-stock products can be hidden',
+      );
+    }
+
+    product.statusBeforeHide = product.status;
+    product.status = ProductStatus.HIDDEN;
+    return this.productRepo.save(product);
+  }
+
+  async unhide(sellerId: string, productId: string): Promise<Product> {
+    const product = await this.findOwnedBySeller(sellerId, productId);
+
+    if (product.status !== ProductStatus.HIDDEN) {
+      throw new BadRequestException('Only hidden products can be unhidden');
+    }
+
+    product.status = product.statusBeforeHide ?? ProductStatus.ACTIVE;
+    product.statusBeforeHide = null;
+    return this.productRepo.save(product);
+  }
+
   private async findOwnedBySeller(
     sellerId: string,
     productId: string,
