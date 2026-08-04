@@ -78,4 +78,31 @@ export class ShopController {
   ) {
     return this.shopService.suspendShop(id, userId, suspendedShopDto);
   }
+
+  // un-suspend shop
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/unsuspend')
+  @HttpCode(HttpStatus.OK)
+  unlockShop(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUserId() userId: string,
+  ) {
+    return this.shopService.unlockShop(id, userId);
+  }
+
+  // get all shops
+  @Roles(UserRole.ADMIN)
+  @Get('all')
+  @HttpCode(HttpStatus.OK)
+  getAllShops() {
+    return this.shopService.getAllShops();
+  }
+
+  // get shop by id
+  @Roles(UserRole.ADMIN)
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  getShopById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.shopService.getShopById(id);
+  }
 }
