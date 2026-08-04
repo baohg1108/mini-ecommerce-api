@@ -135,8 +135,15 @@ export class ProductService {
       where: { id: productId },
     });
     if (!product) throw new NotFoundException('No products found');
-    if (product.status !== ProductStatus.ACTIVE) {
-      throw new BadRequestException('Only active products can be removed');
+
+    if (
+      ![
+        ProductStatus.ACTIVE,
+        ProductStatus.HIDDEN,
+        ProductStatus.OUT_OF_STOCK,
+      ].includes(product.status)
+    ) {
+      throw new BadRequestException('This product cannot be removed');
     }
 
     product.status = ProductStatus.REMOVED;
