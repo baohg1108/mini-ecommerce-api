@@ -14,6 +14,7 @@ import { slugify, randomSuffix } from '../../common/utils/slugify';
 import { ShopStatus } from '../../common/enums/shop-status.enum';
 import { RejectShopDto } from './dtos/reject-shop.dto';
 import { SuspendedShopDto } from './dtos/suspended-shop.dto';
+import { UpdateShopDto } from './dtos/update-shop.dto';
 
 @Injectable()
 export class ShopService {
@@ -170,6 +171,22 @@ export class ShopService {
     shop.suspendedAt = null;
     shop.suspendedBy = null;
     shop.approvedBy = userId;
+
+    const updatedShop = await this.shopRepository.save(shop);
+    return plainToInstance(ShopResponseDto, updatedShop);
+  }
+
+  // update shop
+  async updateShop(
+    userId: string,
+    updateShopDto: UpdateShopDto,
+  ): Promise<ShopResponseDto> {
+    const shop = await this.shopRepository.findOne({ where: { userId } });
+    if (!shop) {
+      throw new NotFoundException('Shop not found for this user');
+    }
+
+    Object.assign(shop, updateShopDto);
 
     const updatedShop = await this.shopRepository.save(shop);
     return plainToInstance(ShopResponseDto, updatedShop);

@@ -19,6 +19,7 @@ import { Roles } from '../../common/decorators/role.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { RejectShopDto } from './dtos/reject-shop.dto';
 import { SuspendedShopDto } from './dtos/suspended-shop.dto';
+import { UpdateShopDto } from './dtos/update-shop.dto';
 
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Controller('shop')
@@ -88,6 +89,17 @@ export class ShopController {
     @CurrentUserId() userId: string,
   ) {
     return this.shopService.unlockShop(id, userId);
+  }
+
+  // update shop
+  @Roles(UserRole.SELLER)
+  @Patch('me')
+  @HttpCode(HttpStatus.OK)
+  updateMyShop(
+    @CurrentUserId() userId: string,
+    @Body() updateShopDto: UpdateShopDto,
+  ) {
+    return this.shopService.updateShop(userId, updateShopDto);
   }
 
   // get all shops
