@@ -11,7 +11,7 @@ import {
   DeleteDateColumn,
 } from 'typeorm';
 import { ProductStatus } from '../../../common/enums/product-status.enum';
-import { Shop } from '../../shopx/entities/shop.entity';
+import { Shop } from '../../shops/entities/shop.entity';
 import { Category } from '../../categogies/entities/category.entity';
 
 @Entity('products')
