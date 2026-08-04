@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -30,6 +31,15 @@ export class ProductService {
     if (shop.status !== ShopStatus.ACTIVE) {
       throw new ForbiddenException(
         'Shop is not active or is locked, cannot list products',
+      );
+    }
+
+    const existingProduct = await this.productRepo.findOne({
+      where: { shopId: shop.id, slug: dto.slug },
+    });
+    if (existingProduct) {
+      throw new ConflictException(
+        'A product with this slug already exists in your shop',
       );
     }
 
