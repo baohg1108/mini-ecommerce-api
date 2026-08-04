@@ -75,6 +75,28 @@ export class ProductController {
     await this.productService.remove(userId, id);
   }
 
+  @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
+  @Patch(':id/hide')
+  async hide(
+    @CurrentUserId() userId: string,
+    @Param('id') id: string,
+  ): Promise<ProductResponseDto> {
+    const product = await this.productService.hide(userId, id);
+    return new ProductResponseDto(product);
+  }
+
+  @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
+  @Patch(':id/unhide')
+  async unhide(
+    @CurrentUserId() userId: string,
+    @Param('id') id: string,
+  ): Promise<ProductResponseDto> {
+    const product = await this.productService.unhide(userId, id);
+    return new ProductResponseDto(product);
+  }
+
   @Roles(UserRole.ADMIN)
   @Get('admin/review')
   async findForAdmin(

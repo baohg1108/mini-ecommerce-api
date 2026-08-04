@@ -93,4 +93,12 @@ export class Product {
 
   @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt!: Date | null;
+
+  @Column({
+    name: 'status_before_hide',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  statusBeforeHide!: ProductStatus | null;
 }
