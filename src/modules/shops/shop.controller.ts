@@ -6,6 +6,9 @@ import {
   Body,
   Get,
   UseGuards,
+  ParseUUIDPipe,
+  Param,
+  Patch,
 } from '@nestjs/common';
 import { ShopService } from './shop.service';
 import { CreateShopDto } from './dtos/create-shop.dto';
@@ -14,14 +17,16 @@ import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { RolesGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/role.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { RejectShopDto } from './dtos/reject-shop.dto';
+import { SuspendedShopDto } from './dtos/suspended-shop.dto';
 
 @UseGuards(AccessTokenGuard, RolesGuard)
-@Roles(UserRole.SELLER)
 @Controller('shop')
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}
 
   // register a shop
+  @Roles(UserRole.SELLER)
   @Post('register-shop')
   @HttpCode(HttpStatus.OK)
   registerShop(
@@ -32,9 +37,45 @@ export class ShopController {
   }
 
   // get shop by me
+  @Roles(UserRole.SELLER)
   @Get('me')
   @HttpCode(HttpStatus.OK)
   getMyShop(@CurrentUserId() userId: string) {
     return this.shopService.getMyShop(userId);
+  }
+
+  // approve shop
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/approve')
+  @HttpCode(HttpStatus.OK)
+  approveShop(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUserId() userId: string,
+  ) {
+    return this.shopService.approveShop(id, userId);
+  }
+
+  // reject shop
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/reject')
+  @HttpCode(HttpStatus.OK)
+  rejectShop(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUserId() userId: string,
+    @Body() rejectShopDto: RejectShopDto,
+  ) {
+    return this.shopService.rejectShop(id, userId, rejectShopDto);
+  }
+
+  // suspend shop
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/suspend')
+  @HttpCode(HttpStatus.OK)
+  async suspendShop(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUserId() userId: string,
+    @Body() suspendedShopDto: SuspendedShopDto,
+  ) {
+    return this.shopService.suspendShop(id, userId, suspendedShopDto);
   }
 }

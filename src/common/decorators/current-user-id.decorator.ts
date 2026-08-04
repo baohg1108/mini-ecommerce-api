@@ -7,12 +7,17 @@
 //   },
 // );
 
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import {
+  createParamDecorator,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Request } from 'express';
 
 interface RequestWithUser extends Request {
   user: {
-    id: string;
+    sub?: string;
+    id?: string;
     [key: string]: any;
   };
 }
@@ -20,6 +25,12 @@ interface RequestWithUser extends Request {
 export const CurrentUserId = createParamDecorator(
   (data: unknown, ctx: ExecutionContext): string => {
     const request = ctx.switchToHttp().getRequest<RequestWithUser>();
-    return request.user.id;
+    const userId = request.user.sub ?? request.user.id;
+
+    if (!userId) {
+      throw new UnauthorizedException('User id is missing from access token');
+    }
+
+    return userId;
   },
 );

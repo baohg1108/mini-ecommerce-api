@@ -34,6 +34,30 @@ export class ShopResponseDto {
   status!: ShopStatus;
 
   @Expose()
+  rejectionReason!: string | null;
+
+  @Expose()
+  approvedAt!: Date | null;
+
+  @Expose()
+  approvedBy!: string | null;
+
+  @Expose()
+  rejectedAt!: Date | null;
+
+  @Expose()
+  rejectedBy!: string | null;
+
+  @Expose()
+  suspendedReason!: string | null;
+
+  @Expose()
+  suspendedAt!: Date | null;
+
+  @Expose()
+  suspendedBy!: string | null;
+
+  @Expose()
   createdAt!: Date;
 
   @Expose()
