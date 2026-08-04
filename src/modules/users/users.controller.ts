@@ -16,7 +16,9 @@ import { CreateUserDto } from './dtos/create-user.dto';
 import { UserResponseDto } from './dtos/user-response.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
 import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
-
+import { UseGuards } from '@nestjs/common';
+import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
+import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -89,5 +91,13 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   findUserByEmailOrNull(@Param('email') email: string) {
     return this.usersService.findUserByEmail(email);
+  }
+
+  // become to seller
+  @Post('become-seller')
+  @UseGuards(AccessTokenGuard)
+  @HttpCode(HttpStatus.OK)
+  becomeToSeller(@CurrentUserId() userId: string): Promise<UserResponseDto> {
+    return this.usersService.becomeToSeller(userId);
   }
 }
