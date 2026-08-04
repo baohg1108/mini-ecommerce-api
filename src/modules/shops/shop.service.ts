@@ -153,4 +153,40 @@ export class ShopService {
     const updatedShop = await this.shopRepository.save(shop);
     return plainToInstance(ShopResponseDto, updatedShop);
   }
+
+  // un-suspend shop
+  async unlockShop(shopId: string, userId: string): Promise<ShopResponseDto> {
+    const shop = await this.shopRepository.findOne({ where: { id: shopId } });
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+
+    if (shop.status !== ShopStatus.SUSPENDED) {
+      throw new ConflictException('Only suspended shops can be unlocked');
+    }
+
+    shop.status = ShopStatus.ACTIVE;
+    shop.suspendedReason = null;
+    shop.suspendedAt = null;
+    shop.suspendedBy = null;
+    shop.approvedBy = userId;
+
+    const updatedShop = await this.shopRepository.save(shop);
+    return plainToInstance(ShopResponseDto, updatedShop);
+  }
+
+  // get all shops
+  async getAllShops(): Promise<ShopResponseDto[]> {
+    const shops = await this.shopRepository.find();
+    return shops.map((shop) => plainToInstance(ShopResponseDto, shop));
+  }
+
+  // get shop by id
+  async getShopById(id: string): Promise<ShopResponseDto> {
+    const shop = await this.shopRepository.findOne({ where: { id } });
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+    return plainToInstance(ShopResponseDto, shop);
+  }
 }
