@@ -16,6 +16,7 @@ import { RejectProductDto } from './dtos/reject-product.dto';
 import { ProductResponseDto } from './dtos/product.response.dto';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { RolesGuard } from '../../common/guards/role.guard';
+import { SellerApprovedGuard } from '../../common/guards/seller-approved.guard';
 import { Roles } from '../../common/decorators/role.decorator';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -26,9 +27,9 @@ import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
-  // ---------- SELLER ----------
-
+  // BR-01 + BR-08
   @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
   @Post()
   async create(
     @CurrentUserId() userId: string,
@@ -39,6 +40,7 @@ export class ProductController {
   }
 
   @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
   @Get('my')
   async findMyProducts(
     @CurrentUserId() userId: string,
@@ -52,6 +54,7 @@ export class ProductController {
   }
 
   @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
   @Patch(':id')
   async update(
     @CurrentUserId() userId: string,
@@ -63,6 +66,7 @@ export class ProductController {
   }
 
   @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
   @Delete(':id')
   async remove(
     @CurrentUserId() userId: string,
@@ -70,8 +74,6 @@ export class ProductController {
   ): Promise<void> {
     await this.productService.remove(userId, id);
   }
-
-  // ---------- ADMIN ----------
 
   @Roles(UserRole.ADMIN)
   @Get('admin/review')
