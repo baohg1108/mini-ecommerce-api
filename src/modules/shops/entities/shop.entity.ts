@@ -85,9 +85,8 @@ export class Shop {
   shippingPolicy!: string | null;
 
   @Column({
-    type: 'enum',
-    enum: ShopStatus,
-    enumName: 'shop_status_enum',
+    type: 'varchar',
+    length: 20,
     default: ShopStatus.PENDING,
   })
   status!: ShopStatus;
@@ -132,6 +131,55 @@ export class Shop {
   })
   @JoinColumn({ name: 'approved_by' })
   approver!: User | null;
+
+  @Column({
+    name: 'rejected_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  rejectedAt!: Date | null;
+
+  @Column({
+    name: 'rejected_by',
+    type: 'uuid',
+    nullable: true,
+  })
+  rejectedBy!: string | null;
+
+  @ManyToOne(() => User, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'rejected_by' })
+  rejector!: User | null;
+
+  @Column({
+    name: 'suspended_reason',
+    type: 'text',
+    nullable: true,
+  })
+  suspendedReason!: string | null;
+
+  @Column({
+    name: 'suspended_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  suspendedAt!: Date | null;
+
+  @Column({
+    name: 'suspended_by',
+    type: 'uuid',
+    nullable: true,
+  })
+  suspendedBy!: string | null;
+
+  @ManyToOne(() => User, (user) => user.suspendedShops, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'suspended_by' })
+  suspender!: User | null;
 
   @CreateDateColumn({
     name: 'created_at',

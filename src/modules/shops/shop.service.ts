@@ -11,6 +11,9 @@ import { User } from '../users/entities/user.entity';
 import { CreateShopDto } from './dtos/create-shop.dto';
 import { ShopResponseDto } from './dtos/shop-response.dto';
 import { slugify, randomSuffix } from '../../common/utils/slugify';
+import { ShopStatus } from '../../common/enums/shop-status.enum';
+import { RejectShopDto } from './dtos/reject-shop.dto';
+import { SuspendedShopDto } from './dtos/suspended-shop.dto';
 
 @Injectable()
 export class ShopService {
@@ -68,5 +71,86 @@ export class ShopService {
     }
 
     return slug;
+  }
+
+  // approve shop
+  async approveShop(id: string, userId: string): Promise<ShopResponseDto> {
+    const shop = await this.shopRepository.findOne({ where: { id } });
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+
+    if (shop.status !== ShopStatus.PENDING) {
+      throw new ConflictException('Only pending shops can be approved');
+    }
+
+    shop.status = ShopStatus.ACTIVE;
+    shop.approvedAt = new Date();
+    shop.approvedBy = userId;
+    shop.rejectionReason = null;
+    shop.rejectedAt = null;
+    shop.rejectedBy = null;
+    shop.suspendedReason = null;
+    shop.suspendedAt = null;
+    shop.suspendedBy = null;
+
+    const updatedShop = await this.shopRepository.save(shop);
+    return plainToInstance(ShopResponseDto, updatedShop);
+  }
+
+  // reject shop
+  async rejectShop(
+    id: string,
+    userId: string,
+    rejectShopDto: RejectShopDto,
+  ): Promise<ShopResponseDto> {
+    const shop = await this.shopRepository.findOne({ where: { id } });
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+
+    if (shop.status !== ShopStatus.PENDING) {
+      throw new ConflictException('Only pending shops can be rejected');
+    }
+
+    shop.status = ShopStatus.REJECTED;
+    shop.rejectionReason = rejectShopDto.reason;
+    shop.rejectedAt = new Date();
+    shop.rejectedBy = userId;
+    shop.approvedBy = null;
+    shop.approvedAt = null;
+    shop.suspendedReason = null;
+    shop.suspendedAt = null;
+    shop.suspendedBy = null;
+
+    const updatedShop = await this.shopRepository.save(shop);
+    return plainToInstance(ShopResponseDto, updatedShop);
+  }
+
+  // suspend shop
+  async suspendShop(
+    shopId: string,
+    adminId: string,
+    suspendedShopDto: SuspendedShopDto,
+  ): Promise<ShopResponseDto> {
+    const shop = await this.shopRepository.findOne({ where: { id: shopId } });
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+
+    if (shop.status !== ShopStatus.ACTIVE) {
+      throw new ConflictException('Only active shops can be suspended');
+    }
+
+    shop.status = ShopStatus.SUSPENDED;
+    shop.suspendedReason = suspendedShopDto.reasonSuspended;
+    shop.suspendedBy = adminId;
+    shop.suspendedAt = new Date();
+    shop.rejectionReason = null;
+    shop.rejectedAt = null;
+    shop.rejectedBy = null;
+
+    const updatedShop = await this.shopRepository.save(shop);
+    return plainToInstance(ShopResponseDto, updatedShop);
   }
 }

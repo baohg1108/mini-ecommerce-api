@@ -118,4 +118,7 @@ export class User {
 
   @OneToMany(() => Shop, (shop) => shop.approver)
   approvedShops!: Shop[];
+
+  @OneToMany(() => Shop, (shop) => shop.suspender)
+  suspendedShops!: Shop[];
 }
