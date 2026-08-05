@@ -21,6 +21,8 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
-    "types": ["multer", "express", "node", "jest"]
-  }
+    "types": ["multer", "express", "node", "jest", "codeceptjs"]
+  },
+  "include": ["src/**/*.ts", "steps.d.ts", "steps_file.ts", "codecept.conf.ts"],
+  "exclude": ["tests/**/*.ts"]
 }
