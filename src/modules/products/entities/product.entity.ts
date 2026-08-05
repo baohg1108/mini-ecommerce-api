@@ -9,10 +9,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
+  OneToMany,
 } from 'typeorm';
 import { ProductStatus } from '../../../common/enums/product-status.enum';
 import { Shop } from '../../shops/entities/shop.entity';
 import { Category } from '../../categogies/entities/category.entity';
+import { ProductImage } from './product-image.entity';
 
 @Entity('products')
 @Index('ix_products_shop', ['shopId'])
@@ -101,4 +103,7 @@ export class Product {
     nullable: true,
   })
   statusBeforeHide!: ProductStatus | null;
+
+  @OneToMany(() => ProductImage, (image) => image.product, { cascade: false })
+  images!: ProductImage[];
 }

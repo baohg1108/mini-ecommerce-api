@@ -53,7 +53,12 @@ export class ProductService {
       status: ProductStatus.PENDING,
     });
 
-    return this.productRepo.save(product);
+    const saved = await this.productRepo.save(product);
+
+    return this.productRepo.findOne({
+      where: { id: saved.id },
+      relations: { images: true },
+    }) as Promise<Product>;
   }
 
   async update(
@@ -75,7 +80,12 @@ export class ProductService {
       product.approvedAt = null;
     }
 
-    return this.productRepo.save(product);
+    await this.productRepo.save(product);
+
+    return this.productRepo.findOne({
+      where: { id: product.id },
+      relations: { images: true },
+    }) as Promise<Product>;
   }
 
   async findMyProducts(
@@ -90,6 +100,7 @@ export class ProductService {
 
     const [data, total] = await this.productRepo.findAndCount({
       where: { shopId: shop.id },
+      relations: { images: true },
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -106,12 +117,22 @@ export class ProductService {
 
     const [data, total] = await this.productRepo.findAndCount({
       where: { status: ProductStatus.PENDING },
+      relations: { images: true },
       order: { createdAt: 'ASC' },
       skip: (page - 1) * limit,
       take: limit,
     });
 
     return { data, total };
+  }
+
+  async findOne(productId: string): Promise<Product> {
+    const product = await this.productRepo.findOne({
+      where: { id: productId },
+      relations: { images: true },
+    });
+    if (!product) throw new NotFoundException('No products found');
+    return product;
   }
 
   async approve(adminId: string, productId: string): Promise<Product> {
@@ -122,7 +143,14 @@ export class ProductService {
     product.approvedAt = new Date();
     product.rejectionReason = null;
 
-    return this.productRepo.save(product);
+    await this.productRepo.save(product);
+
+    return this.productRepo.findOneOrFail({
+      where: { id: productId },
+      relations: {
+        images: true,
+      },
+    });
   }
 
   async reject(
@@ -137,12 +165,22 @@ export class ProductService {
     product.approvedBy = adminId;
     product.approvedAt = null;
 
-    return this.productRepo.save(product);
+    await this.productRepo.save(product);
+
+    return this.productRepo.findOneOrFail({
+      where: { id: productId },
+      relations: {
+        images: true,
+      },
+    });
   }
 
   async removeByAdmin(productId: string, reason: string): Promise<Product> {
     const product = await this.productRepo.findOne({
       where: { id: productId },
+      relations: {
+        images: true,
+      },
     });
     if (!product) throw new NotFoundException('No products found');
 
@@ -215,6 +253,7 @@ export class ProductService {
   private async findPendingOrThrow(productId: string): Promise<Product> {
     const product = await this.productRepo.findOne({
       where: { id: productId },
+      relations: { images: true },
     });
     if (!product) throw new NotFoundException('No products found');
     if (product.status !== ProductStatus.PENDING) {
