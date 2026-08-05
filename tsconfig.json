@@ -23,6 +23,12 @@
     "noFallthroughCasesInSwitch": false,
     "types": ["multer", "express", "node", "jest", "codeceptjs"]
   },
-  "include": ["src/**/*.ts", "steps.d.ts", "steps_file.ts", "codecept.conf.ts"],
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "steps.d.ts",
+    "steps_file.ts",
+    "codecept.conf.ts"
+  ],
   "exclude": ["tests/**/*.ts"]
 }

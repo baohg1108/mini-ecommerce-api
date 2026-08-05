@@ -14,7 +14,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { Request } from 'express';
 
 interface RequestWithUser extends Request {
-  user: Record<string, any>;
+  user?: Record<string, unknown>;
 }
 
 export const CurrentUser = createParamDecorator(
