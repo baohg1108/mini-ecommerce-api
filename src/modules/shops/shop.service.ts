@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -12,6 +13,7 @@ import { CreateShopDto } from './dtos/create-shop.dto';
 import { ShopResponseDto } from './dtos/shop-response.dto';
 import { slugify, randomSuffix } from '../../common/utils/slugify';
 import { ShopStatus } from '../../common/enums/shop-status.enum';
+import { UserRole } from '../../common/enums/user-role.enum';
 import { RejectShopDto } from './dtos/reject-shop.dto';
 import { SuspendedShopDto } from './dtos/suspended-shop.dto';
 import { UpdateShopDto } from './dtos/update-shop.dto';
@@ -23,38 +25,58 @@ export class ShopService {
     @InjectRepository(User) private readonly userRepository: Repository<User>,
   ) {}
 
+  // FR-06: register shop
   async registerShop(
     userId: string,
     createShopDto: CreateShopDto,
   ): Promise<ShopResponseDto> {
-    // check if the user exists
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    // one seller has only one shop
+    const shopName = createShopDto.shopName?.trim();
+
     const existingShop = await this.shopRepository.findOne({
       where: { userId },
     });
+
     if (existingShop) {
-      throw new ConflictException('Shop already exists for this user');
+      if (existingShop.status !== ShopStatus.REJECTED) {
+        throw new ConflictException('Shop already exists for this user');
+      }
+
+      const slug = await this.generateUniqueSlug(shopName, existingShop.id);
+
+      Object.assign(existingShop, createShopDto, {
+        shopName,
+        slug,
+        status: ShopStatus.PENDING,
+        rejectionReason: null,
+        rejectedAt: null,
+        rejectedBy: null,
+      });
+
+      const resubmittedShop = await this.shopRepository.save(existingShop);
+      await this.promoteToSellerIfNeeded(user);
+      return plainToInstance(ShopResponseDto, resubmittedShop);
     }
 
-    // auto generate slug from shop name
-    const slug = await this.generateUniqueSlug(createShopDto.shopName);
+    const slug = await this.generateUniqueSlug(shopName);
 
-    // create the new shop
     const newShop = this.shopRepository.create({
       ...createShopDto,
+      shopName,
       userId,
       slug,
     });
 
     const savedShop = await this.shopRepository.save(newShop);
+    await this.promoteToSellerIfNeeded(user);
     return plainToInstance(ShopResponseDto, savedShop);
   }
 
+  // get my shop
   async getMyShop(userId: string): Promise<ShopResponseDto> {
     const shop = await this.shopRepository.findOne({ where: { userId } });
     if (!shop) {
@@ -63,18 +85,56 @@ export class ShopService {
     return plainToInstance(ShopResponseDto, shop);
   }
 
-  private async generateUniqueSlug(shopName: string): Promise<string> {
+  // FR-18 + BR-01: get public shop by id
+  async getPublicShopById(id: string): Promise<ShopResponseDto> {
+    const shop = await this.shopRepository.findOne({ where: { id } });
+    if (!shop || shop.status !== ShopStatus.ACTIVE) {
+      throw new NotFoundException('Shop not found or no longer active');
+    }
+    return plainToInstance(ShopResponseDto, shop);
+  }
+
+  // BR-01 + BR-08:
+  async ensureShopIsActive(shopId: string): Promise<Shop> {
+    const shop = await this.shopRepository.findOne({ where: { id: shopId } });
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+    if (shop.status !== ShopStatus.ACTIVE) {
+      throw new ForbiddenException(
+        `This action requires an active shop. Current shop status: ${shop.status}`,
+      );
+    }
+    return shop;
+  }
+
+  private async generateUniqueSlug(
+    shopName: string,
+    excludeShopId?: string,
+  ): Promise<string> {
     const base = slugify(shopName);
     let slug = base;
 
-    while (await this.shopRepository.findOne({ where: { slug } })) {
+    while (true) {
+      const conflict = await this.shopRepository.findOne({ where: { slug } });
+      if (!conflict || conflict.id === excludeShopId) {
+        break;
+      }
       slug = `${base}-${randomSuffix()}`;
     }
 
     return slug;
   }
 
-  // approve shop
+  // FR-06: update role from CUSTOMER to SELLER if needed
+  private async promoteToSellerIfNeeded(user: User): Promise<void> {
+    if (user.role === UserRole.CUSTOMER) {
+      user.role = UserRole.SELLER;
+      await this.userRepository.save(user);
+    }
+  }
+
+  // FR-07: approve shop
   async approveShop(id: string, userId: string): Promise<ShopResponseDto> {
     const shop = await this.shopRepository.findOne({ where: { id } });
     if (!shop) {
@@ -99,7 +159,7 @@ export class ShopService {
     return plainToInstance(ShopResponseDto, updatedShop);
   }
 
-  // reject shop
+  // FR-07: reject shop
   async rejectShop(
     id: string,
     userId: string,
@@ -128,7 +188,7 @@ export class ShopService {
     return plainToInstance(ShopResponseDto, updatedShop);
   }
 
-  // suspend shop
+  // FR-09: suspend shop
   async suspendShop(
     shopId: string,
     adminId: string,
@@ -155,7 +215,7 @@ export class ShopService {
     return plainToInstance(ShopResponseDto, updatedShop);
   }
 
-  // un-suspend shop
+  // FR-09: un-suspend shop
   async unlockShop(shopId: string, userId: string): Promise<ShopResponseDto> {
     const shop = await this.shopRepository.findOne({ where: { id: shopId } });
     if (!shop) {
@@ -176,7 +236,7 @@ export class ShopService {
     return plainToInstance(ShopResponseDto, updatedShop);
   }
 
-  // update shop
+  // FR-08: update shop
   async updateShop(
     userId: string,
     updateShopDto: UpdateShopDto,
@@ -186,15 +246,22 @@ export class ShopService {
       throw new NotFoundException('Shop not found for this user');
     }
 
-    Object.assign(shop, updateShopDto);
+    const sanitizedDto: UpdateShopDto = { ...updateShopDto };
+    if (typeof sanitizedDto.shopName === 'string') {
+      sanitizedDto.shopName = sanitizedDto.shopName.trim();
+    }
+
+    Object.assign(shop, sanitizedDto);
 
     const updatedShop = await this.shopRepository.save(shop);
     return plainToInstance(ShopResponseDto, updatedShop);
   }
 
   // get all shops
-  async getAllShops(): Promise<ShopResponseDto[]> {
-    const shops = await this.shopRepository.find();
+  async getAllShops(status?: ShopStatus): Promise<ShopResponseDto[]> {
+    const shops = await this.shopRepository.find(
+      status ? { where: { status } } : {},
+    );
     return shops.map((shop) => plainToInstance(ShopResponseDto, shop));
   }
 
