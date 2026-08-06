@@ -80,6 +80,7 @@ export class CategoryService {
     await this.cacheManager.del(PUBLIC_TREE_CACHE_KEY);
   }
 
+  // FR-10: create category
   async create(dto: CreateCategoryDto): Promise<Category> {
     const result = await this.dataSource.transaction(async (manager) => {
       if (dto.parentId) {
@@ -172,6 +173,7 @@ export class CategoryService {
     return ordered;
   }
 
+  // FR-10: update category
   async update(
     categoryId: string,
     dto: Partial<Omit<CreateCategoryDto, 'parentId'>>,
@@ -195,6 +197,7 @@ export class CategoryService {
     return result;
   }
 
+  // FR-10: move category
   async move(dto: MoveCategoryDto): Promise<void> {
     const { categoryId, newParentId } = dto;
 
@@ -245,6 +248,7 @@ export class CategoryService {
     await this.invalidatePublicCache();
   }
 
+  // FR-10: delete category
   async remove(categoryId: string): Promise<void> {
     const childCount = await this.categoryRepo.count({
       where: { parentId: categoryId },

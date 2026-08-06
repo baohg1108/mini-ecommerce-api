@@ -24,7 +24,7 @@ export class AuthService {
     private ConfigService: ConfigService,
   ) {}
 
-  // register
+  // FR-01: register
   async register(registerDto: RegisterDto): Promise<UserResponseDto> {
     const normalizedEmail = normalizeEmail(registerDto.email);
     const existingUser =
@@ -40,7 +40,7 @@ export class AuthService {
     });
   }
 
-  // login
+  // FR-02: login
   async login(loginDto: LoginDto): Promise<AuthResponse> {
     const normalizedEmail = normalizeEmail(loginDto.email);
     const { password } = loginDto;

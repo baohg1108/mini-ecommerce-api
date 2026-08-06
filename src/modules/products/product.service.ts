@@ -22,6 +22,7 @@ export class ProductService {
     private readonly shopRepo: Repository<Shop>,
   ) {}
 
+  // FR-11: create product
   async create(sellerId: string, dto: CreateProductDto): Promise<Product> {
     const shop = await this.shopRepo.findOne({ where: { userId: sellerId } });
     if (!shop) {
@@ -46,6 +47,7 @@ export class ProductService {
     return this.productRepo.save(product);
   }
 
+  // FR-13: update or hide product
   async update(
     sellerId: string,
     productId: string,
@@ -68,6 +70,7 @@ export class ProductService {
     return this.productRepo.save(product);
   }
 
+  // FR-13: list my products
   async findMyProducts(
     sellerId: string,
     query: PaginationQueryDto,
@@ -88,6 +91,7 @@ export class ProductService {
     return { data, total };
   }
 
+  // FR-14: admin review products
   async findForAdmin(
     query: PaginationQueryDto,
   ): Promise<{ data: Product[]; total: number }> {
@@ -104,6 +108,7 @@ export class ProductService {
     return { data, total };
   }
 
+  // FR-14: approve product
   async approve(adminId: string, productId: string): Promise<Product> {
     const product = await this.findPendingOrThrow(productId);
 
@@ -115,6 +120,7 @@ export class ProductService {
     return this.productRepo.save(product);
   }
 
+  // FR-14: reject product
   async reject(
     adminId: string,
     productId: string,
@@ -130,6 +136,7 @@ export class ProductService {
     return this.productRepo.save(product);
   }
 
+  // FR-14: remove product by admin
   async removeByAdmin(productId: string, reason: string): Promise<Product> {
     const product = await this.productRepo.findOne({
       where: { id: productId },
@@ -144,6 +151,7 @@ export class ProductService {
     return this.productRepo.save(product);
   }
 
+  // FR-13: delete product
   async remove(sellerId: string, productId: string): Promise<void> {
     const product = await this.findOwnedBySeller(sellerId, productId);
     await this.productRepo.softDelete(product.id);
