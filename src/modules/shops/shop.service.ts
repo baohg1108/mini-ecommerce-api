@@ -88,7 +88,7 @@ export class ShopService {
   // FR-18 + BR-01: get public shop by id
   async getPublicShopById(id: string): Promise<ShopResponseDto> {
     const shop = await this.shopRepository.findOne({ where: { id } });
-    if (!shop || shop.status !== ShopStatus.ACTIVE) {
+    if (shop?.status !== ShopStatus.ACTIVE) {
       throw new NotFoundException('Shop not found or no longer active');
     }
     return plainToInstance(ShopResponseDto, shop);
