@@ -14,12 +14,16 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { Request } from 'express';
 
 interface RequestWithUser extends Request {
-  user: Record<string, any>;
+  user?: Record<string, unknown>;
 }
 
 export const CurrentUser = createParamDecorator(
   (data: unknown, ctx: ExecutionContext) => {
     const request = ctx.switchToHttp().getRequest<RequestWithUser>();
-    return request.user;
+    if (!data) {
+      return request.user;
+    }
+
+    return request.user?.[data as string];
   },
 );

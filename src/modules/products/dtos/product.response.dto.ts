@@ -1,4 +1,5 @@
 import { Product } from '../entities/product.entity';
+import { ProductImageResponseDto } from './product-image.response.dto';
 
 export class ProductResponseDto {
   id: string;
@@ -16,6 +17,7 @@ export class ProductResponseDto {
   soldCount: number;
   createdAt: Date;
   updatedAt: Date;
+  images: ProductImageResponseDto[];
 
   constructor(product: Product) {
     this.id = product.id;
@@ -33,5 +35,8 @@ export class ProductResponseDto {
     this.soldCount = product.soldCount;
     this.createdAt = product.createdAt;
     this.updatedAt = product.updatedAt;
+    this.images = (product.images ?? []).map(
+      (image) => new ProductImageResponseDto(image),
+    );
   }
 }

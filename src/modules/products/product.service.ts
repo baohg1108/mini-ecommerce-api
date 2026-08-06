@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -34,6 +35,15 @@ export class ProductService {
       );
     }
 
+    const existingProduct = await this.productRepo.findOne({
+      where: { shopId: shop.id, slug: dto.slug },
+    });
+    if (existingProduct) {
+      throw new ConflictException(
+        'A product with this slug already exists in your shop',
+      );
+    }
+
     const product = this.productRepo.create({
       shopId: shop.id,
       categoryId: dto.categoryId,
@@ -44,7 +54,12 @@ export class ProductService {
       status: ProductStatus.PENDING,
     });
 
-    return this.productRepo.save(product);
+    const saved = await this.productRepo.save(product);
+
+    return this.productRepo.findOne({
+      where: { id: saved.id },
+      relations: { images: true },
+    }) as Promise<Product>;
   }
 
   // FR-13: update or hide product
@@ -67,7 +82,12 @@ export class ProductService {
       product.approvedAt = null;
     }
 
-    return this.productRepo.save(product);
+    await this.productRepo.save(product);
+
+    return this.productRepo.findOne({
+      where: { id: product.id },
+      relations: { images: true },
+    }) as Promise<Product>;
   }
 
   // FR-13: list my products
@@ -83,6 +103,7 @@ export class ProductService {
 
     const [data, total] = await this.productRepo.findAndCount({
       where: { shopId: shop.id },
+      relations: { images: true },
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -100,6 +121,7 @@ export class ProductService {
 
     const [data, total] = await this.productRepo.findAndCount({
       where: { status: ProductStatus.PENDING },
+      relations: { images: true },
       order: { createdAt: 'ASC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -109,6 +131,15 @@ export class ProductService {
   }
 
   // FR-14: approve product
+  async findOne(productId: string): Promise<Product> {
+    const product = await this.productRepo.findOne({
+      where: { id: productId },
+      relations: { images: true },
+    });
+    if (!product) throw new NotFoundException('No products found');
+    return product;
+  }
+
   async approve(adminId: string, productId: string): Promise<Product> {
     const product = await this.findPendingOrThrow(productId);
 
@@ -117,7 +148,14 @@ export class ProductService {
     product.approvedAt = new Date();
     product.rejectionReason = null;
 
-    return this.productRepo.save(product);
+    await this.productRepo.save(product);
+
+    return this.productRepo.findOneOrFail({
+      where: { id: productId },
+      relations: {
+        images: true,
+      },
+    });
   }
 
   // FR-14: reject product
@@ -133,17 +171,34 @@ export class ProductService {
     product.approvedBy = adminId;
     product.approvedAt = null;
 
-    return this.productRepo.save(product);
+    await this.productRepo.save(product);
+
+    return this.productRepo.findOneOrFail({
+      where: { id: productId },
+      relations: {
+        images: true,
+      },
+    });
   }
 
   // FR-14: remove product by admin
   async removeByAdmin(productId: string, reason: string): Promise<Product> {
     const product = await this.productRepo.findOne({
       where: { id: productId },
+      relations: {
+        images: true,
+      },
     });
     if (!product) throw new NotFoundException('No products found');
-    if (product.status !== ProductStatus.ACTIVE) {
-      throw new BadRequestException('Only active products can be removed');
+
+    if (
+      ![
+        ProductStatus.ACTIVE,
+        ProductStatus.HIDDEN,
+        ProductStatus.OUT_OF_STOCK,
+      ].includes(product.status)
+    ) {
+      throw new BadRequestException('This product cannot be removed');
     }
 
     product.status = ProductStatus.REMOVED;
@@ -155,6 +210,35 @@ export class ProductService {
   async remove(sellerId: string, productId: string): Promise<void> {
     const product = await this.findOwnedBySeller(sellerId, productId);
     await this.productRepo.softDelete(product.id);
+  }
+
+  async hide(sellerId: string, productId: string): Promise<Product> {
+    const product = await this.findOwnedBySeller(sellerId, productId);
+
+    if (
+      product.status !== ProductStatus.ACTIVE &&
+      product.status !== ProductStatus.OUT_OF_STOCK
+    ) {
+      throw new BadRequestException(
+        'Only active or out-of-stock products can be hidden',
+      );
+    }
+
+    product.statusBeforeHide = product.status;
+    product.status = ProductStatus.HIDDEN;
+    return this.productRepo.save(product);
+  }
+
+  async unhide(sellerId: string, productId: string): Promise<Product> {
+    const product = await this.findOwnedBySeller(sellerId, productId);
+
+    if (product.status !== ProductStatus.HIDDEN) {
+      throw new BadRequestException('Only hidden products can be unhidden');
+    }
+
+    product.status = product.statusBeforeHide ?? ProductStatus.ACTIVE;
+    product.statusBeforeHide = null;
+    return this.productRepo.save(product);
   }
 
   private async findOwnedBySeller(
@@ -177,6 +261,7 @@ export class ProductService {
   private async findPendingOrThrow(productId: string): Promise<Product> {
     const product = await this.productRepo.findOne({
       where: { id: productId },
+      relations: { images: true },
     });
     if (!product) throw new NotFoundException('No products found');
     if (product.status !== ProductStatus.PENDING) {
