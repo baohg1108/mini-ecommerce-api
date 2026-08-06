@@ -43,7 +43,7 @@ export class UsersService {
     });
   }
 
-  // update user
+  // FR-04: update profile
   // i can use: [preload] - [postgres returning] - [merge + save]
   async updateUser(
     id: string,
@@ -64,7 +64,7 @@ export class UsersService {
     });
   }
 
-  // soft delete user
+  // FR-36:soft delete user account
   async softDeleteUser(id: string): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id } });
 
@@ -76,7 +76,7 @@ export class UsersService {
     await this.userRepository.save(user);
   }
 
-  // restore user
+  // FR-36: restore user account
   async restoreUser(id: string): Promise<void> {
     const user = await this.userRepository.findOne({
       where: { id },
@@ -91,7 +91,7 @@ export class UsersService {
     await this.userRepository.save(user);
   }
 
-  // hard delete user
+  // FR-36: hard delete user
   // @IsPublic()
   async hardDeleteUser(id: string): Promise<void> {
     const user = await this.userRepository.findOne({
@@ -106,7 +106,7 @@ export class UsersService {
     await this.userRepository.remove(user);
   }
 
-  // find all users
+  // FR-36: admin user list
   async findAllUsers(paginationQuery: PaginationQueryDto) {
     const { page, limit } = paginationQuery;
     const offset = getOffset(page, limit);
@@ -130,7 +130,7 @@ export class UsersService {
     };
   }
 
-  // find user by id
+  // FR-36 find user by id
   async findUserById(id: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({ where: { id } });
 
@@ -143,12 +143,12 @@ export class UsersService {
     });
   }
 
-  // find user by id (raw entity)
+  // FR-36: find user by id (raw entity)
   async findUserByIdOrNull(id: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { id } });
   }
 
-  // find user by email
+  // FR-36: find user by email
   async findUserByEmail(email: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({ where: { email } });
 
@@ -161,12 +161,12 @@ export class UsersService {
     });
   }
 
-  // find user by email — check is exist
+  // FR-36: find user by email — check is exist
   async findUserByEmailOrNull(email: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { email } });
   }
 
-  // become to seller
+  // FR-06: become to seller
   async becomeToSeller(id: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({ where: { id } });
 

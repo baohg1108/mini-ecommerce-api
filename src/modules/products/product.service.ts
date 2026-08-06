@@ -15,6 +15,8 @@ import { CreateProductDto } from './dtos/create-product.dto';
 import { UpdateProductDto } from './dtos/update-product.dto';
 import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
 import { ProductDetailsResponseDto } from './dtos/product-details.response.dto';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { ProductImage } from './entities/product-image.entity';
 @Injectable()
 export class ProductService {
   constructor(
@@ -22,8 +24,12 @@ export class ProductService {
     private readonly productRepo: Repository<Product>,
     @InjectRepository(Shop)
     private readonly shopRepo: Repository<Shop>,
+    @InjectRepository(ProductImage)
+    private readonly imageRepo: Repository<ProductImage>,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
+  // FR-11: create product
   async create(sellerId: string, dto: CreateProductDto): Promise<Product> {
     const shop = await this.shopRepo.findOne({ where: { userId: sellerId } });
     if (!shop) {
@@ -62,6 +68,7 @@ export class ProductService {
     }) as Promise<Product>;
   }
 
+  // FR-13: update or hide product
   async update(
     sellerId: string,
     productId: string,
@@ -89,6 +96,7 @@ export class ProductService {
     }) as Promise<Product>;
   }
 
+  // FR-13: list my products
   async findMyProducts(
     sellerId: string,
     query: PaginationQueryDto,
@@ -110,6 +118,7 @@ export class ProductService {
     return { data, total };
   }
 
+  // FR-14: admin review products
   async findForAdmin(
     query: PaginationQueryDto,
   ): Promise<{ data: Product[]; total: number }> {
@@ -128,6 +137,8 @@ export class ProductService {
   }
 
   async findOneProductDetail(id: string): Promise<ProductDetailsResponseDto> {
+  // FR-14: approve product
+  async findOne(productId: string): Promise<Product> {
     const product = await this.productRepo.findOne({
       where: { id },
       relations: { images: true },
@@ -156,6 +167,7 @@ export class ProductService {
     });
   }
 
+  // FR-14: reject product
   async reject(
     adminId: string,
     productId: string,
@@ -178,6 +190,7 @@ export class ProductService {
     });
   }
 
+  // FR-14: remove product by admin
   async removeByAdmin(productId: string, reason: string): Promise<Product> {
     const product = await this.productRepo.findOne({
       where: { id: productId },
@@ -202,8 +215,24 @@ export class ProductService {
     return this.productRepo.save(product);
   }
 
+  // FR-13: delete product
   async remove(sellerId: string, productId: string): Promise<void> {
     const product = await this.findOwnedBySeller(sellerId, productId);
+
+    const images = await this.imageRepo.find({
+      where: { productId: product.id },
+    });
+
+    if (images.length > 0) {
+      const publicIds = images
+        .map((img) => this.cloudinaryService.extractPublicId(img.imageUrl))
+        .filter((id): id is string => !!id);
+
+      if (publicIds.length > 0) {
+        await this.cloudinaryService.deleteFiles(publicIds);
+      }
+    }
+
     await this.productRepo.softDelete(product.id);
   }
 
