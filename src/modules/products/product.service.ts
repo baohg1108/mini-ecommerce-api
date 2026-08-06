@@ -14,6 +14,7 @@ import { ShopStatus } from '../../common/enums/shop-status.enum';
 import { CreateProductDto } from './dtos/create-product.dto';
 import { UpdateProductDto } from './dtos/update-product.dto';
 import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
+import { ProductDetailsResponseDto } from './dtos/product-details.response.dto';
 @Injectable()
 export class ProductService {
   constructor(
@@ -126,13 +127,15 @@ export class ProductService {
     return { data, total };
   }
 
-  async findOne(productId: string): Promise<Product> {
+  async findOneProductDetail(id: string): Promise<ProductDetailsResponseDto> {
     const product = await this.productRepo.findOne({
-      where: { id: productId },
+      where: { id },
       relations: { images: true },
     });
-    if (!product) throw new NotFoundException('No products found');
-    return product;
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+    return new ProductDetailsResponseDto(product);
   }
 
   async approve(adminId: string, productId: string): Promise<Product> {

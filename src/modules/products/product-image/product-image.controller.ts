@@ -1,6 +1,7 @@
 import {
   Controller,
   Param,
+  ParseUUIDPipe,
   Post,
   UploadedFile,
   UploadedFiles,
@@ -42,7 +43,7 @@ export class ProductImageController {
   @UseInterceptors(FilesInterceptor('images', MAX_IMAGES_PER_PRODUCT))
   async uploadProductImages(
     @CurrentUserId() sellerId: string,
-    @Param('id') productId: string,
+    @Param('id', ParseUUIDPipe) productId: string,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
     const images = await this.productImageService.uploadImages(
