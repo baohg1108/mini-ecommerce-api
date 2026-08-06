@@ -14,6 +14,8 @@ import { ShopStatus } from '../../common/enums/shop-status.enum';
 import { CreateProductDto } from './dtos/create-product.dto';
 import { UpdateProductDto } from './dtos/update-product.dto';
 import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { ProductImage } from './entities/product-image.entity';
 @Injectable()
 export class ProductService {
   constructor(
@@ -21,6 +23,9 @@ export class ProductService {
     private readonly productRepo: Repository<Product>,
     @InjectRepository(Shop)
     private readonly shopRepo: Repository<Shop>,
+    @InjectRepository(ProductImage)
+    private readonly imageRepo: Repository<ProductImage>,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async create(sellerId: string, dto: CreateProductDto): Promise<Product> {
@@ -201,6 +206,21 @@ export class ProductService {
 
   async remove(sellerId: string, productId: string): Promise<void> {
     const product = await this.findOwnedBySeller(sellerId, productId);
+
+    const images = await this.imageRepo.find({
+      where: { productId: product.id },
+    });
+
+    if (images.length > 0) {
+      const publicIds = images
+        .map((img) => this.cloudinaryService.extractPublicId(img.imageUrl))
+        .filter((id): id is string => !!id);
+
+      if (publicIds.length > 0) {
+        await this.cloudinaryService.deleteFiles(publicIds);
+      }
+    }
+
     await this.productRepo.softDelete(product.id);
   }
 
