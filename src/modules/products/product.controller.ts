@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -21,6 +22,7 @@ import { Roles } from '../../common/decorators/role.decorator';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
+import { ProductDetailsResponseDto } from './dtos/product-details.response.dto';
 
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Controller('products')
@@ -139,5 +141,13 @@ export class ProductController {
   ): Promise<ProductResponseDto> {
     const product = await this.productService.removeByAdmin(id, reason);
     return new ProductResponseDto(product);
+  }
+
+  @Get(':id')
+  async findOneProductDetail(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ProductDetailsResponseDto> {
+    const product = await this.productService.findOneProductDetail(id);
+    return product;
   }
 }
