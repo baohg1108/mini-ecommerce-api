@@ -9,6 +9,8 @@ import {
 } from 'typeorm';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { UserStatus } from '../../../common/enums/user-status.enum';
+import { OneToOne, OneToMany } from 'typeorm';
+import { Shop } from '../../shops/entities/shop.entity';
 
 @Entity('users')
 @Index('ix_users_role_status', ['role', 'status'])
@@ -110,4 +112,13 @@ export class User {
     nullable: true,
   })
   deletedAt!: Date | null;
+
+  @OneToOne(() => Shop, (shop) => shop.user)
+  shop!: Shop;
+
+  @OneToMany(() => Shop, (shop) => shop.approver)
+  approvedShops!: Shop[];
+
+  @OneToMany(() => Shop, (shop) => shop.suspender)
+  suspendedShops!: Shop[];
 }

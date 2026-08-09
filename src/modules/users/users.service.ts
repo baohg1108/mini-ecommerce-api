@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -13,6 +18,7 @@ import {
   buildPaginationMeta,
   getOffset,
 } from './../../common/utils/pagination.util';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 @Injectable()
 export class UsersService {
@@ -37,7 +43,7 @@ export class UsersService {
     });
   }
 
-  // update user
+  // FR-04: update profile
   // i can use: [preload] - [postgres returning] - [merge + save]
   async updateUser(
     id: string,
@@ -58,7 +64,7 @@ export class UsersService {
     });
   }
 
-  // soft delete user
+  // FR-36:soft delete user account
   async softDeleteUser(id: string): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id } });
 
@@ -70,7 +76,7 @@ export class UsersService {
     await this.userRepository.save(user);
   }
 
-  // restore user
+  // FR-36: restore user account
   async restoreUser(id: string): Promise<void> {
     const user = await this.userRepository.findOne({
       where: { id },
@@ -85,7 +91,8 @@ export class UsersService {
     await this.userRepository.save(user);
   }
 
-  // hard delete user
+  // FR-36: hard delete user
+  // @IsPublic()
   async hardDeleteUser(id: string): Promise<void> {
     const user = await this.userRepository.findOne({
       where: { id },
@@ -99,7 +106,7 @@ export class UsersService {
     await this.userRepository.remove(user);
   }
 
-  // find all users
+  // FR-36: admin user list
   async findAllUsers(paginationQuery: PaginationQueryDto) {
     const { page, limit } = paginationQuery;
     const offset = getOffset(page, limit);
@@ -123,7 +130,7 @@ export class UsersService {
     };
   }
 
-  // find user by id
+  // FR-36 find user by id
   async findUserById(id: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({ where: { id } });
 
@@ -136,12 +143,12 @@ export class UsersService {
     });
   }
 
-  // find user by id (raw entity)
+  // FR-36: find user by id (raw entity)
   async findUserByIdOrNull(id: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { id } });
   }
 
-  // find user by email
+  // FR-36: find user by email
   async findUserByEmail(email: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({ where: { email } });
 
@@ -154,8 +161,36 @@ export class UsersService {
     });
   }
 
-  // find user by email — check is exist
+  // FR-36: find user by email — check is exist
   async findUserByEmailOrNull(email: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { email } });
+  }
+
+  // FR-06: become to seller
+  async becomeToSeller(id: string): Promise<UserResponseDto> {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    if (!user) {
+      throw new NotFoundException(`User with id ${id} not found`);
+    }
+
+    // i can write if (user.role !== UserRole.CUSTOMER) but i want to be more specific and clear
+    // alow-list
+    if (user.role === UserRole.SELLER) {
+      throw new ConflictException(`User with id ${id} is already a seller`);
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      throw new ForbiddenException(
+        `Admin accounts cannot be converted into seller accounts`,
+      );
+    }
+
+    user.role = UserRole.SELLER;
+    const updatedUser = await this.userRepository.save(user);
+
+    return plainToInstance(UserResponseDto, updatedUser, {
+      excludeExtraneousValues: true,
+    });
   }
 }

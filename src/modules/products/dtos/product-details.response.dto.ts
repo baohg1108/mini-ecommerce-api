@@ -1,7 +1,7 @@
 import { Product } from '../entities/product.entity';
 import { ProductImageResponseDto } from './product-image.response.dto';
 
-export class ProductResponseDto {
+export class ProductDetailsResponseDto {
   id: string;
   shopId: string;
   categoryId: string;
@@ -10,13 +10,9 @@ export class ProductResponseDto {
   description: string | null;
   basePrice: number;
   status: string;
-  rejectionReason: string | null;
-  approvedAt: Date | null;
   avgRating: number;
   reviewCount: number;
   soldCount: number;
-  createdAt: Date;
-  updatedAt: Date;
   images: ProductImageResponseDto[];
 
   constructor(product: Product) {
@@ -28,13 +24,9 @@ export class ProductResponseDto {
     this.description = product.description;
     this.basePrice = Number(product.basePrice);
     this.status = product.status;
-    this.rejectionReason = product.rejectionReason;
-    this.approvedAt = product.approvedAt;
     this.avgRating = Number(product.avgRating);
     this.reviewCount = product.reviewCount;
     this.soldCount = product.soldCount;
-    this.createdAt = product.createdAt;
-    this.updatedAt = product.updatedAt;
     this.images = (product.images ?? []).map(
       (image) => new ProductImageResponseDto(image),
     );

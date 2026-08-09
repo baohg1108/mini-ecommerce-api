@@ -1,48 +1,59 @@
 import {
   Controller,
-  Post,
   Param,
+  ParseUUIDPipe,
+  Post,
   UploadedFile,
   UploadedFiles,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { CloudinaryService } from '../../cloudinary/cloudinary.service';
+import { ProductImageService } from './product-image.service';
+import { CurrentUserId } from '../../../common/decorators/current-user-id.decorator';
+import { AccessTokenGuard } from '../../../common/guards/access-token.guard';
+import { RolesGuard } from '../../../common/guards/role.guard';
+import { Roles } from '../../../common/decorators/role.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
 
 const MAX_IMAGES_PER_PRODUCT = 5;
 
 @Controller('products')
 export class ProductImageController {
-  constructor(private readonly cloudinaryService: CloudinaryService) {}
+  constructor(
+    private readonly productImageService: ProductImageService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   @Post('avatar')
   @UseInterceptors(FileInterceptor('image'))
   async uploadAvatar(@UploadedFile() file: Express.Multer.File) {
     const result = await this.cloudinaryService.uploadFile(file, 'avatars');
-    return { url: result.secure_url, publicId: result.public_id };
+
+    return {
+      url: result.secure_url,
+      publicId: result.public_id,
+    };
   }
 
+  @Roles(UserRole.SELLER)
+  @UseGuards(AccessTokenGuard, RolesGuard)
   @Post(':id/images')
   @UseInterceptors(FilesInterceptor('images', MAX_IMAGES_PER_PRODUCT))
   async uploadProductImages(
-    @Param('id') productId: string,
+    @CurrentUserId() sellerId: string,
+    @Param('id', ParseUUIDPipe) productId: string,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    const results = await this.cloudinaryService.uploadMultiple(
+    const images = await this.productImageService.uploadImages(
+      sellerId,
+      productId,
       files,
-      `mini-ecommerce/products/${productId}`,
     );
 
     return {
-      images: results.map((r) => ({
-        url: r.secure_url,
-        publicId: r.public_id,
-        thumbnailUrl: this.cloudinaryService.getTransformedUrl(
-          r.public_id,
-          300,
-          300,
-        ),
-      })),
+      images,
     };
   }
 }

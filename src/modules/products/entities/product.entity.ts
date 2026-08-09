@@ -1,4 +1,3 @@
-// modules/products/entities/product.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -10,10 +9,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
+  OneToMany,
 } from 'typeorm';
 import { ProductStatus } from '../../../common/enums/product-status.enum';
-import { Shop } from '../../shopx/entities/shop.entity';
+import { Shop } from '../../shops/entities/shop.entity';
 import { Category } from '../../categogies/entities/category.entity';
+import { ProductImage } from './product-image.entity';
 
 @Entity('products')
 @Index('ix_products_shop', ['shopId'])
@@ -94,4 +95,15 @@ export class Product {
 
   @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt!: Date | null;
+
+  @Column({
+    name: 'status_before_hide',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  statusBeforeHide!: ProductStatus | null;
+
+  @OneToMany(() => ProductImage, (image) => image.product, { cascade: false })
+  images!: ProductImage[];
 }

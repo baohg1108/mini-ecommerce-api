@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -16,19 +17,21 @@ import { RejectProductDto } from './dtos/reject-product.dto';
 import { ProductResponseDto } from './dtos/product.response.dto';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { RolesGuard } from '../../common/guards/role.guard';
+import { SellerApprovedGuard } from '../../common/guards/seller-approved.guard';
 import { Roles } from '../../common/decorators/role.decorator';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
+import { ProductDetailsResponseDto } from './dtos/product-details.response.dto';
 
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Controller('products')
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
-  // ---------- SELLER ----------
-
+  // BR-01 + BR-08
   @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
   @Post()
   async create(
     @CurrentUserId() userId: string,
@@ -39,6 +42,7 @@ export class ProductController {
   }
 
   @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
   @Get('my')
   async findMyProducts(
     @CurrentUserId() userId: string,
@@ -52,6 +56,7 @@ export class ProductController {
   }
 
   @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
   @Patch(':id')
   async update(
     @CurrentUserId() userId: string,
@@ -63,6 +68,7 @@ export class ProductController {
   }
 
   @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
   @Delete(':id')
   async remove(
     @CurrentUserId() userId: string,
@@ -71,7 +77,27 @@ export class ProductController {
     await this.productService.remove(userId, id);
   }
 
-  // ---------- ADMIN ----------
+  @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
+  @Patch(':id/hide')
+  async hide(
+    @CurrentUserId() userId: string,
+    @Param('id') id: string,
+  ): Promise<ProductResponseDto> {
+    const product = await this.productService.hide(userId, id);
+    return new ProductResponseDto(product);
+  }
+
+  @Roles(UserRole.SELLER)
+  @UseGuards(SellerApprovedGuard)
+  @Patch(':id/unhide')
+  async unhide(
+    @CurrentUserId() userId: string,
+    @Param('id') id: string,
+  ): Promise<ProductResponseDto> {
+    const product = await this.productService.unhide(userId, id);
+    return new ProductResponseDto(product);
+  }
 
   @Roles(UserRole.ADMIN)
   @Get('admin/review')
@@ -115,5 +141,13 @@ export class ProductController {
   ): Promise<ProductResponseDto> {
     const product = await this.productService.removeByAdmin(id, reason);
     return new ProductResponseDto(product);
+  }
+
+  @Get(':id')
+  async findOneProductDetail(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ProductDetailsResponseDto> {
+    const product = await this.productService.findOneProductDetail(id);
+    return product;
   }
 }

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { validateEnv } from './configs/env.validation';
@@ -11,6 +12,10 @@ import { ProductImageController } from './modules/products/product-image/product
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoryModule } from './modules/categogies/category.module';
 import { ProductModule } from './modules/products/product.module';
+import { ShopModule } from './modules/shops/shop.module';
+import { APP_GUARD } from '@nestjs/core';
+import { AccessTokenGuard } from './common/guards/access-token.guard';
+import { SeedModule } from './databases/seeds/seed.module';
 
 @Module({
   imports: [
@@ -36,7 +41,15 @@ import { ProductModule } from './modules/products/product.module';
     AuthModule,
     CategoryModule,
     ProductModule,
+    ShopModule,
+    SeedModule,
   ],
   controllers: [ProductImageController],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: AccessTokenGuard,
+    },
+  ],
 })
 export class AppModule {}
