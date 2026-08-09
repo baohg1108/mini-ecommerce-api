@@ -118,6 +118,25 @@ export class ProductService {
     return { data, total };
   }
 
+  // FR-18: public - list active products of a shop
+  async findPublicByShop(
+    shopId: string,
+    query: PaginationQueryDto,
+  ): Promise<{ data: Product[]; total: number }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    const [data, total] = await this.productRepo.findAndCount({
+      where: { shopId, status: ProductStatus.ACTIVE },
+      relations: { images: true },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return { data, total };
+  }
+
   // FR-14: admin review products
   async findForAdmin(
     query: PaginationQueryDto,
@@ -137,8 +156,6 @@ export class ProductService {
   }
 
   async findOneProductDetail(id: string): Promise<ProductDetailsResponseDto> {
-  // FR-14: approve product
-  async findOne(productId: string): Promise<Product> {
     const product = await this.productRepo.findOne({
       where: { id },
       relations: { images: true },

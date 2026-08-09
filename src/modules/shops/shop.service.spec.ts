@@ -5,7 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { ObjectLiteral, Repository } from 'typeorm';
 
 import { ShopService } from './shop.service';
 import { Shop } from './entities/shop.entity';
@@ -26,9 +26,13 @@ jest.mock('../../common/utils/slugify', () => ({
 const mockSlugify = jest.mocked(slugify);
 const mockRandomSuffix = jest.mocked(randomSuffix);
 
-type MockRepository<T = any> = Partial<Record<keyof Repository<T>, jest.Mock>>;
+type MockRepository<T extends ObjectLiteral = any> = Partial<
+  Record<keyof Repository<T>, jest.Mock>
+>;
 
-const createMockRepository = <T = any>(): MockRepository<T> => ({
+const createMockRepository = <
+  T extends ObjectLiteral = any,
+>(): MockRepository<T> => ({
   findOne: jest.fn(),
   find: jest.fn(),
   create: jest.fn(),
@@ -755,7 +759,8 @@ describe('ShopService', () => {
 
       const result = await service.getPublicShopById(baseShop.id);
 
-      expect(result.status).toBe(ShopStatus.ACTIVE);
+      expect(result.id).toBe(baseShop.id);
+      expect(result.shopName).toBe(baseShop.shopName);
     });
 
     it('shop is not Active (e.g. Pending) → NotFoundException', async () => {

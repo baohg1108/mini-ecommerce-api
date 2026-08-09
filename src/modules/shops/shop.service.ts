@@ -17,6 +17,8 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { RejectShopDto } from './dtos/reject-shop.dto';
 import { SuspendedShopDto } from './dtos/suspended-shop.dto';
 import { UpdateShopDto } from './dtos/update-shop.dto';
+import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
+import { PublicShopResponseDto } from './dtos/public-shop-response.dto';
 
 @Injectable()
 export class ShopService {
@@ -86,12 +88,12 @@ export class ShopService {
   }
 
   // FR-18 + BR-01: get public shop by id
-  async getPublicShopById(id: string): Promise<ShopResponseDto> {
+  async getPublicShopById(id: string): Promise<PublicShopResponseDto> {
     const shop = await this.shopRepository.findOne({ where: { id } });
     if (shop?.status !== ShopStatus.ACTIVE) {
       throw new NotFoundException('Shop not found or no longer active');
     }
-    return plainToInstance(ShopResponseDto, shop);
+    return new PublicShopResponseDto(shop);
   }
 
   // BR-01 + BR-08:
@@ -272,5 +274,25 @@ export class ShopService {
       throw new NotFoundException('Shop not found');
     }
     return plainToInstance(ShopResponseDto, shop);
+  }
+
+  // FR-18: public active shops
+  async getAllActiveShops(
+    query: PaginationQueryDto,
+  ): Promise<{ data: PublicShopResponseDto[]; total: number }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    const [shops, total] = await this.shopRepository.findAndCount({
+      where: { status: ShopStatus.ACTIVE },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return {
+      data: shops.map((shop) => new PublicShopResponseDto(shop)),
+      total,
+    };
   }
 }

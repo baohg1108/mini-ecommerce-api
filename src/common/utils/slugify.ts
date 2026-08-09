@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 export function slugify(input: string): string {
   const normalized = input
     .normalize('NFD')
@@ -16,7 +18,5 @@ export function slugify(input: string): string {
 
 // if the slug already exists, we will add a random suffix to make it unique
 export function randomSuffix(length = 6): string {
-  return Math.random()
-    .toString(16)
-    .slice(2, 2 + length);
+  return randomBytes(length).toString('hex').slice(0, length);
 }
