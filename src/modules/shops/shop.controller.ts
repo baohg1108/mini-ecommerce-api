@@ -20,11 +20,73 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { RejectShopDto } from './dtos/reject-shop.dto';
 import { SuspendedShopDto } from './dtos/suspended-shop.dto';
 import { UpdateShopDto } from './dtos/update-shop.dto';
+import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
+import { IsPublic } from '../../common/decorators/public.decorator';
+import { Query } from '@nestjs/common';
+import { PublicProductResponseDto } from '../products/dtos/public-product-response.dto';
+import { ProductService } from '../products/product.service';
 
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Controller('shop')
 export class ShopController {
-  constructor(private readonly shopService: ShopService) {}
+  constructor(
+    private readonly shopService: ShopService,
+    private readonly productService: ProductService,
+  ) {}
+
+  // FR-18: public shops
+  @IsPublic()
+  @Get('public')
+  @HttpCode(HttpStatus.OK)
+  async getAllActiveShops(@Query() query: PaginationQueryDto) {
+    const { data, total } = await this.shopService.getAllActiveShops(query);
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: limit > 0 ? Math.ceil(total / limit) : 0,
+    };
+  }
+
+  // public shop profile
+  @IsPublic()
+  @Get('public/:id')
+  @HttpCode(HttpStatus.OK)
+  async getShopProfile(@Param('id', ParseUUIDPipe) id: string) {
+    return this.shopService.getPublicShopById(id);
+  }
+
+  // public products of a shop
+  @IsPublic()
+  @Get('public/:id/products')
+  @HttpCode(HttpStatus.OK)
+  async getShopProducts(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    await this.shopService.getPublicShopById(id);
+
+    const { data, total } = await this.productService.findPublicByShop(
+      id,
+      query,
+    );
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    return {
+      data: data.map((product) => new PublicProductResponseDto(product)),
+      total,
+      page,
+      limit,
+      totalPages: limit > 0 ? Math.ceil(total / limit) : 0,
+    };
+  }
 
   // register a shop
   @Roles(UserRole.SELLER)
@@ -93,9 +155,10 @@ export class ShopController {
 
   // update shop
   @Roles(UserRole.SELLER)
-  @Patch('me')
+  @Patch(':id')
   @HttpCode(HttpStatus.OK)
   updateMyShop(
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUserId() userId: string,
     @Body() updateShopDto: UpdateShopDto,
   ) {
