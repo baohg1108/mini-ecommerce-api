@@ -8,6 +8,7 @@ import {
   HttpStatus,
   HttpCode,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { IsPublic } from '../../common/decorators/public.decorator';
@@ -19,6 +20,12 @@ import { UpdateProductVariantDto } from './dtos/update-product-variant.dto';
 @Controller('products/:productId/variants')
 export class ProductVariantController {
   constructor(private readonly variantService: ProductVariantService) {}
+
+  @Get()
+  @IsPublic()
+  findByProduct(@Param('productId', ParseUUIDPipe) productId: string) {
+    return this.variantService.findByProduct(productId);
+  }
 
   @Post()
   @UseGuards(AccessTokenGuard)
