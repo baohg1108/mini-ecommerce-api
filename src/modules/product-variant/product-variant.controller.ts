@@ -15,6 +15,7 @@ import { CurrentUserId } from '../../common/decorators/current-user-id.decorator
 import { ProductVariantService } from './product-variant.service';
 import { CreateProductVariantDto } from './dtos/create-product-variant.dto';
 import { UpdateProductVariantDto } from './dtos/update-product-variant.dto';
+import { UpsertVariantsDto } from './dtos/upsert-variant.dto';
 
 @Controller('products/:productId/variants')
 export class ProductVariantController {
@@ -29,6 +30,18 @@ export class ProductVariantController {
     @Body() dto: CreateProductVariantDto,
   ) {
     return this.variantService.create(productId, userId, dto);
+  }
+
+  // FR-12: bulk create/update variants
+  @Post('upsert')
+  @UseGuards(AccessTokenGuard)
+  @HttpCode(HttpStatus.OK)
+  async Upsert(
+    @Param('productId') productId: string,
+    @CurrentUserId() userId: string,
+    @Body() dto: UpsertVariantsDto,
+  ) {
+    return this.variantService.Upsert(productId, userId, dto);
   }
 }
 
