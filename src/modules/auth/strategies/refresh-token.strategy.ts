@@ -33,10 +33,6 @@ export class RefreshTokenStrategy extends PassportStrategy(
 
   constructor(configService: ConfigService) {
     const secret = configService.get<string>('JWT_REFRESH_TOKEN_SECRET');
-    console.log(
-      'REFRESH SECRET LOADED:',
-      secret ? `length=${secret.length}` : 'UNDEFINED',
-    );
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: secret!,
