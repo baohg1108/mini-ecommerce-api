@@ -134,4 +134,13 @@ export class ProductVariantService {
 
     return this.variantRepo.save(variant);
   }
+
+  // find all variants by product id
+  async findByProduct(productId: string): Promise<ProductVariant[]> {
+    const variants = await this.variantRepo.find({
+      where: { productId },
+    });
+
+    return variants;
+  }
 }
