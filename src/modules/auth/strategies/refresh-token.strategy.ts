@@ -41,7 +41,7 @@ export class RefreshTokenStrategy extends PassportStrategy(
   }
 
   validate(req: Request, payload: JwtPayload) {
-    console.log('validate() called, payload:', payload);
+    // console.log('validate() called, payload:', payload);
     return {
       ...payload,
       refreshToken:
