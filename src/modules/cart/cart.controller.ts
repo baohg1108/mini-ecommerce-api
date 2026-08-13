@@ -17,6 +17,7 @@ import { UpdateCartItemDto } from './dtos/update-cart-item.dto';
 import { CartResponseDto } from './dtos/cart.response.dto';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
+import { GroupedCartDto } from './dtos/grouped-cart.dto';
 
 // only customer logged in can access Cart API
 @Controller('cart')
@@ -28,6 +29,12 @@ export class CartController {
   @HttpCode(HttpStatus.OK)
   getMyCart(@CurrentUserId() userId: string): Promise<CartResponseDto> {
     return this.cartService.getMyCart(userId);
+  }
+
+  @Get('grouped-by-shop')
+  @HttpCode(HttpStatus.OK)
+  getGroupedCart(@CurrentUserId() userId: string): Promise<GroupedCartDto[]> {
+    return this.cartService.getGroupedCartForCheckout(userId);
   }
 
   @Post('items')

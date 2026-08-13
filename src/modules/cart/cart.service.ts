@@ -15,6 +15,7 @@ import { CartResponseDto } from './dtos/cart.response.dto';
 import { CartItemResponseDto } from './dtos/cart-item.response.dto';
 import { ProductStatus } from '../../common/enums/product-status.enum';
 import { ShopStatus } from '../../common/enums/shop-status.enum';
+import { GroupedCartDto, ShopInfoDto } from './dtos/grouped-cart.dto';
 
 @Injectable()
 export class CartService {
@@ -235,6 +236,62 @@ export class CartService {
     const cart = await this.getOrCreateCart(userId);
     await this.cartItemRepository.delete({ cartId: cart.id });
     return this.toCartResponse(cart, []);
+  }
+
+  async getGroupedCartForCheckout(userId: string): Promise<GroupedCartDto[]> {
+    const cart = await this.getOrCreateCart(userId);
+
+    const items = await this.cartItemRepository.find({
+      where: { cartId: cart.id },
+      relations: {
+        variant: {
+          product: {
+            shop: true,
+          },
+        },
+      },
+    });
+
+    return this.groupItemsByShop(items);
+  }
+
+  groupItemsByShop(items: CartItem[]): GroupedCartDto[] {
+    const groups = new Map<string, GroupedCartDto>();
+
+    for (const item of items) {
+      const product = item.variant?.product;
+      const shop = product?.shop;
+
+      if (!product || !shop) {
+        throw new BadRequestException(
+          `Cannot resolve shop for cart item ${item.id}`,
+        );
+      }
+
+      let group = groups.get(shop.id);
+
+      if (!group) {
+        group = new GroupedCartDto({
+          shop: new ShopInfoDto({ id: shop.id, name: shop.shopName }),
+          items: [],
+        });
+        groups.set(shop.id, group);
+      }
+
+      group.items.push(
+        new CartItemResponseDto({
+          id: item.id,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          productId: product.id,
+          productName: product.name,
+          price: item.variant?.price,
+          stockQty: item.variant?.availableQty,
+        }),
+      );
+    }
+
+    return Array.from(groups.values());
   }
 
   async getMyCart(userId: string): Promise<CartResponseDto> {
