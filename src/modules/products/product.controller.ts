@@ -23,6 +23,8 @@ import { CurrentUserId } from '../../common/decorators/current-user-id.decorator
 import { UserRole } from '../../common/enums/user-role.enum';
 import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
 import { ProductDetailsResponseDto } from './dtos/product-details.response.dto';
+import { SearchProductDto } from './dtos/search-product.dto';
+import { IsPublic } from '../../common/decorators/public.decorator';
 
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Controller('products')
@@ -141,6 +143,12 @@ export class ProductController {
   ): Promise<ProductResponseDto> {
     const product = await this.productService.removeByAdmin(id, reason);
     return new ProductResponseDto(product);
+  }
+
+  @Get('search')
+  @IsPublic()
+  async search(@Query() dto: SearchProductDto) {
+    return this.productService.search(dto);
   }
 
   @Get(':id')

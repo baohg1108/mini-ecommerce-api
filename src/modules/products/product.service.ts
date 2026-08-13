@@ -17,6 +17,9 @@ import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
 import { ProductDetailsResponseDto } from './dtos/product-details.response.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ProductImage } from './entities/product-image.entity';
+import { SearchProductDto, ProductSortBy } from './dtos/search-product.dto';
+import { SearchProductResponseDto } from './dtos/search-product.response.dto';
+import { PublicProductResponseDto } from './dtos/public-product-response.dto';
 @Injectable()
 export class ProductService {
   constructor(
@@ -311,5 +314,61 @@ export class ProductService {
       );
     }
     return product;
+  }
+
+  async search(dto: SearchProductDto): Promise<SearchProductResponseDto> {
+    const {
+      keyword,
+      categoryId,
+      minPrice,
+      maxPrice,
+      sortBy = ProductSortBy.NEWEST,
+      page,
+      limit,
+    } = dto;
+
+    const qb = this.productRepo
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.images', 'images')
+      .where('product.status = :status', { status: 'active' });
+
+    if (keyword) {
+      qb.andWhere('product.name ILIKE :keyword', { keyword: `%${keyword}%` });
+    }
+    if (categoryId) {
+      qb.andWhere('product.categoryId = :categoryId', { categoryId });
+    }
+    if (minPrice !== undefined) {
+      qb.andWhere('product.basePrice >= :minPrice', { minPrice });
+    }
+    if (maxPrice !== undefined) {
+      qb.andWhere('product.basePrice <= :maxPrice', { maxPrice });
+    }
+
+    switch (sortBy) {
+      case ProductSortBy.PRICE_ASC:
+        qb.orderBy('product.basePrice', 'ASC');
+        break;
+      case ProductSortBy.PRICE_DESC:
+        qb.orderBy('product.basePrice', 'DESC');
+        break;
+      case ProductSortBy.BEST_SELLING:
+        qb.orderBy('product.soldCount', 'DESC');
+        break;
+      case ProductSortBy.RATING:
+        qb.orderBy('product.avgRating', 'DESC');
+        break;
+      default:
+        qb.orderBy('product.createdAt', 'DESC');
+        break;
+    }
+
+    qb.skip((page - 1) * limit).take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+    const mappedItems = items.map((item) => new PublicProductResponseDto(item));
+
+    return new SearchProductResponseDto(mappedItems, total, page, limit);
   }
 }
