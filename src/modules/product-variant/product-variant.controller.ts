@@ -11,8 +11,11 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
+import { RolesGuard } from '../../common/guards/role.guard';
 import { IsPublic } from '../../common/decorators/public.decorator';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
+import { Roles } from '../../common/decorators/role.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
 import { ProductVariantService } from './product-variant.service';
 import { CreateProductVariantDto } from './dtos/create-product-variant.dto';
 import { UpdateProductVariantDto } from './dtos/update-product-variant.dto';
@@ -29,7 +32,8 @@ export class ProductVariantController {
   }
 
   @Post()
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.SELLER)
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Param('productId') productId: string,
@@ -41,7 +45,8 @@ export class ProductVariantController {
 
   // FR-12: bulk create/update variants
   @Post('upsert')
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.SELLER)
   @HttpCode(HttpStatus.OK)
   async Upsert(
     @Param('productId') productId: string,
@@ -69,7 +74,8 @@ export class VariantController {
   }
 
   @Patch(':id')
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.SELLER)
   async update(
     @Param('id') id: string,
     @CurrentUserId() userId: string,

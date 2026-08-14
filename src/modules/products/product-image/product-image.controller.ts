@@ -26,6 +26,7 @@ export class ProductImageController {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
+  @UseGuards(AccessTokenGuard)
   @Post('avatar')
   @UseInterceptors(FileInterceptor('image'))
   async uploadAvatar(@UploadedFile() file: Express.Multer.File) {

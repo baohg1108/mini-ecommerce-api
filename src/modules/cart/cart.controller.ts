@@ -16,12 +16,16 @@ import { AddToCartDto } from './dtos/add-to-cart.dto';
 import { UpdateCartItemDto } from './dtos/update-cart-item.dto';
 import { CartResponseDto } from './dtos/cart.response.dto';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
+import { RolesGuard } from '../../common/guards/role.guard';
+import { Roles } from '../../common/decorators/role.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
 import { GroupedCartDto } from './dtos/grouped-cart.dto';
 
 // only customer logged in can access Cart API
 @Controller('cart')
-@UseGuards(AccessTokenGuard)
+@UseGuards(AccessTokenGuard, RolesGuard)
+@Roles(UserRole.CUSTOMER)
 export class CartController {
   constructor(private readonly cartService: CartService) {}
 

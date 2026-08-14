@@ -10,15 +10,18 @@ import {
   Patch,
   Delete,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dtos/create-user.dto';
 import { UserResponseDto } from './dtos/user-response.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
 import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
-import { UseGuards } from '@nestjs/common';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
+import { RolesGuard } from '../../common/guards/role.guard';
+import { Roles } from '../../common/decorators/role.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -33,6 +36,8 @@ export class UsersController {
   }
 
   // update user
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   async updateUser(
@@ -43,6 +48,8 @@ export class UsersController {
   }
 
   // soft delete user
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Patch(':id/soft-delete')
   @HttpCode(HttpStatus.OK)
   async softDeleteUser(@Param('id', ParseUUIDPipe) id: string) {
@@ -50,6 +57,8 @@ export class UsersController {
   }
 
   // restore user
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Patch(':id/restore')
   @HttpCode(HttpStatus.OK)
   async restoreUser(@Param('id', ParseUUIDPipe) id: string) {
@@ -57,6 +66,8 @@ export class UsersController {
   }
 
   // hard delete user
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   async hardDeleteUser(@Param('id', ParseUUIDPipe) id: string) {
@@ -64,6 +75,8 @@ export class UsersController {
   }
 
   // find all
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Get()
   @HttpCode(HttpStatus.OK)
   findAllUsers(@Query() paginationDto: PaginationQueryDto) {
@@ -71,6 +84,8 @@ export class UsersController {
   }
 
   // find user by id
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   findUserById(
@@ -80,6 +95,8 @@ export class UsersController {
   }
 
   // find user by email
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Get('email/:email')
   @HttpCode(HttpStatus.OK)
   findUserByEmail(@Param('email') email: string) {
@@ -87,6 +104,8 @@ export class UsersController {
   }
 
   // find user by email (or null)
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Get('email/:email')
   @HttpCode(HttpStatus.OK)
   findUserByEmailOrNull(@Param('email') email: string) {
@@ -94,8 +113,9 @@ export class UsersController {
   }
 
   // become to seller
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER)
   @Post('become-seller')
-  @UseGuards(AccessTokenGuard)
   @HttpCode(HttpStatus.OK)
   becomeToSeller(@CurrentUserId() userId: string): Promise<UserResponseDto> {
     return this.usersService.becomeToSeller(userId);
