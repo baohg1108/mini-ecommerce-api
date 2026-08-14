@@ -5,9 +5,10 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from 'class-validator';
-import { PaginationQueryDto } from '../../../common/dtos/pagination-query.dto'; // sửa lại path đúng chỗ bạn để file này
+import { PaginationQueryDto } from '../../../common/dtos/pagination-query.dto';
 
 export enum ProductSortBy {
   NEWEST = 'newest',
@@ -26,6 +27,11 @@ export class SearchProductDto extends PaginationQueryDto {
   @IsUUID()
   categoryId?: string;
 
+  // FR-16: lọc theo gian hàng
+  @IsOptional()
+  @IsUUID()
+  shopId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
@@ -37,6 +43,13 @@ export class SearchProductDto extends PaginationQueryDto {
   @IsNumber()
   @Min(0)
   maxPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(5)
+  minRating?: number;
 
   @IsOptional()
   @IsEnum(ProductSortBy)

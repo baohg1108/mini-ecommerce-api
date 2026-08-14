@@ -316,12 +316,15 @@ export class ProductService {
     return product;
   }
 
+  // UC-06 + FR-16: search & filter product using QueryBuilder
   async search(dto: SearchProductDto): Promise<SearchProductResponseDto> {
     const {
       keyword,
       categoryId,
+      shopId,
       minPrice,
       maxPrice,
+      minRating,
       sortBy = ProductSortBy.NEWEST,
       page,
       limit,
@@ -336,14 +339,27 @@ export class ProductService {
     if (keyword) {
       qb.andWhere('product.name ILIKE :keyword', { keyword: `%${keyword}%` });
     }
+
     if (categoryId) {
       qb.andWhere('product.categoryId = :categoryId', { categoryId });
     }
+
+    // FR-16: lọc theo gian hàng
+    if (shopId) {
+      qb.andWhere('product.shopId = :shopId', { shopId });
+    }
+
     if (minPrice !== undefined) {
       qb.andWhere('product.basePrice >= :minPrice', { minPrice });
     }
+
     if (maxPrice !== undefined) {
       qb.andWhere('product.basePrice <= :maxPrice', { maxPrice });
+    }
+
+    // FR-16: lọc theo đánh giá tối thiểu
+    if (minRating !== undefined) {
+      qb.andWhere('product.avgRating >= :minRating', { minRating });
     }
 
     switch (sortBy) {
