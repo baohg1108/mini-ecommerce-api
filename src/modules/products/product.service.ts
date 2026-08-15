@@ -19,7 +19,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ProductImage } from './entities/product-image.entity';
 import { SearchProductDto, ProductSortBy } from './dtos/search-product.dto';
 import { SearchProductResponseDto } from './dtos/search-product.response.dto';
-import { PublicProductResponseDto } from './dtos/public-product-response.dto';
+import { ProductListItemDto } from './dtos/public-product-response.dto';
 @Injectable()
 export class ProductService {
   constructor(
@@ -332,32 +332,25 @@ export class ProductService {
 
     const qb = this.productRepo
       .createQueryBuilder('product')
-      .leftJoinAndSelect('product.category', 'category')
-      .leftJoinAndSelect('product.images', 'images')
+      .leftJoin('product.category', 'category')
+      .addSelect(['category.id', 'category.name', 'category.slug'])
       .where('product.status = :status', { status: 'active' });
 
     if (keyword) {
       qb.andWhere('product.name ILIKE :keyword', { keyword: `%${keyword}%` });
     }
-
     if (categoryId) {
       qb.andWhere('product.categoryId = :categoryId', { categoryId });
     }
-
-    // FR-16: lọc theo gian hàng
     if (shopId) {
       qb.andWhere('product.shopId = :shopId', { shopId });
     }
-
     if (minPrice !== undefined) {
       qb.andWhere('product.basePrice >= :minPrice', { minPrice });
     }
-
     if (maxPrice !== undefined) {
       qb.andWhere('product.basePrice <= :maxPrice', { maxPrice });
     }
-
-    // FR-16: lọc theo đánh giá tối thiểu
     if (minRating !== undefined) {
       qb.andWhere('product.avgRating >= :minRating', { minRating });
     }
@@ -383,7 +376,24 @@ export class ProductService {
     qb.skip((page - 1) * limit).take(limit);
 
     const [items, total] = await qb.getManyAndCount();
-    const mappedItems = items.map((item) => new PublicProductResponseDto(item));
+
+    if (items.length === 0) {
+      return new SearchProductResponseDto([], total, page, limit);
+    }
+
+    const productIds = items.map((p) => p.id);
+    const imagesMap = await this.productRepo
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.images', 'images')
+      .where('product.id IN (:...productIds)', { productIds })
+      .getMany();
+
+    const imagesById = new Map(imagesMap.map((p) => [p.id, p.images]));
+
+    const mappedItems = items.map((item) => {
+      item.images = imagesById.get(item.id) ?? [];
+      return new ProductListItemDto(item);
+    });
 
     return new SearchProductResponseDto(mappedItems, total, page, limit);
   }
