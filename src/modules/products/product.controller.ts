@@ -62,7 +62,7 @@ export class ProductController {
   @Patch(':id')
   async update(
     @CurrentUserId() userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,
   ): Promise<ProductResponseDto> {
     const product = await this.productService.update(userId, id, dto);
@@ -74,7 +74,7 @@ export class ProductController {
   @Delete(':id')
   async remove(
     @CurrentUserId() userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.productService.remove(userId, id);
   }
@@ -84,7 +84,7 @@ export class ProductController {
   @Patch(':id/hide')
   async hide(
     @CurrentUserId() userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ProductResponseDto> {
     const product = await this.productService.hide(userId, id);
     return new ProductResponseDto(product);
@@ -95,7 +95,7 @@ export class ProductController {
   @Patch(':id/unhide')
   async unhide(
     @CurrentUserId() userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ProductResponseDto> {
     const product = await this.productService.unhide(userId, id);
     return new ProductResponseDto(product);
@@ -114,7 +114,7 @@ export class ProductController {
   @Patch('admin/:id/approve')
   async approve(
     @CurrentUserId() adminId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ProductResponseDto> {
     const product = await this.productService.approve(adminId, id);
     return new ProductResponseDto(product);
@@ -124,7 +124,7 @@ export class ProductController {
   @Patch('admin/:id/reject')
   async reject(
     @CurrentUserId() adminId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RejectProductDto,
   ): Promise<ProductResponseDto> {
     const product = await this.productService.reject(
@@ -138,7 +138,7 @@ export class ProductController {
   @Roles(UserRole.ADMIN)
   @Patch('admin/:id/remove')
   async removeByAdmin(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason: string,
   ): Promise<ProductResponseDto> {
     const product = await this.productService.removeByAdmin(id, reason);
