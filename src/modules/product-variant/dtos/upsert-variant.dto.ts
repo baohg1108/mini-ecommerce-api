@@ -16,6 +16,7 @@ export class VariantItemDto {
   @IsUUID()
   id?: string;
 
+  @IsOptional()
   @IsNotEmpty()
   @IsString()
   sku!: string;
@@ -24,10 +25,12 @@ export class VariantItemDto {
   @IsObject()
   attributes?: Record<string, string | number>;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
   price!: number;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
   stockQty!: number;

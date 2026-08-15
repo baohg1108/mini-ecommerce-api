@@ -124,7 +124,7 @@ export class CartService {
         where: { cartId: cart.id },
         relations: {
           variant: {
-            product: {},
+            product: { shop: true },
           },
         },
       });
@@ -186,7 +186,7 @@ export class CartService {
         where: { cartId: cart.id },
         relations: {
           variant: {
-            product: {},
+            product: { shop: true },
           },
         },
       });
@@ -223,7 +223,7 @@ export class CartService {
         where: { cartId: cart.id },
         relations: {
           variant: {
-            product: {},
+            product: { shop: true },
           },
         },
       });
@@ -298,7 +298,7 @@ export class CartService {
     const cart = await this.getOrCreateCart(userId);
     const items = await this.cartItemRepository.find({
       where: { cartId: cart.id },
-      relations: { variant: { product: {} } },
+      relations: { variant: { product: { shop: true } } },
     });
     return this.toCartResponse(cart, items);
   }
@@ -316,18 +316,45 @@ export class CartService {
     return new CartResponseDto({
       id: cart.id,
       userId: cart.userId,
-      items: items.map(
-        (item) =>
-          new CartItemResponseDto({
-            id: item.id,
-            variantId: item.variantId,
-            quantity: item.quantity,
-            productId: item.variant?.product?.id,
-            productName: item.variant?.product?.name,
-            price: item.variant?.price,
-            stockQty: item.variant?.availableQty,
-          }),
-      ),
+      items: items.map((item) => this.buildCartItemResponse(item)),
+    });
+  }
+
+  private buildCartItemResponse(item: CartItem): CartItemResponseDto {
+    const variant = item.variant;
+    const product = variant?.product;
+    const shop = product?.shop;
+
+    let isAvailable = true;
+    let warning: string | undefined;
+
+    if (!variant) {
+      isAvailable = false;
+      warning = 'Product variant no longer exists';
+    } else if (!product || product.status !== ProductStatus.ACTIVE) {
+      isAvailable = false;
+      warning = 'Product is no longer available';
+    } else if (shop && shop.status !== ShopStatus.ACTIVE) {
+      isAvailable = false;
+      warning = 'Shop is no longer active';
+    } else if (variant.availableQty <= 0) {
+      isAvailable = false;
+      warning = 'Out of stock';
+    } else if (item.quantity > variant.availableQty) {
+      isAvailable = false;
+      warning = `Only ${variant.availableQty} items left in stock`;
+    }
+
+    return new CartItemResponseDto({
+      id: item.id,
+      variantId: item.variantId,
+      quantity: item.quantity,
+      productId: product?.id,
+      productName: product?.name,
+      price: variant?.price,
+      stockQty: variant?.availableQty,
+      isAvailable,
+      warning,
     });
   }
 }
