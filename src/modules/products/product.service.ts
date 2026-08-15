@@ -337,7 +337,13 @@ export class ProductService {
       .where('product.status = :status', { status: 'active' });
 
     if (keyword) {
-      qb.andWhere('product.name ILIKE :keyword', { keyword: `%${keyword}%` });
+      qb.andWhere(
+        `(product.name ILIKE :keyword OR EXISTS (
+      SELECT 1 FROM product_variants v
+      WHERE v.product_id = product.id AND v.sku ILIKE :keyword
+    ))`,
+        { keyword: `%${keyword}%` },
+      );
     }
     if (categoryId) {
       qb.andWhere('product.categoryId = :categoryId', { categoryId });
