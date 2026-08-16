@@ -1,3 +1,16 @@
+/**
+ * `@typescript-eslint/unbound-method` (bản gốc, không phải `jest/unbound-method`)
+ * không hiểu rằng các phương thức trên `jest.Mocked<T>` chỉ là mock function
+ * thuần (không đọc `this`), nên nó báo lỗi sai cho các pattern rất phổ biến
+ * kiểu `expect(service.method).toHaveBeenCalledWith(...)` xuyên suốt file này.
+ * Cách sửa đúng lâu dài là bật `eslint-plugin-jest` và dùng rule
+ * `jest/unbound-method` (rule đó biết bỏ qua ngữ cảnh của Jest matcher) thay
+ * cho rule gốc trong cấu hình ESLint cho các file *.spec.ts. Trong lúc chưa
+ * đổi cấu hình, tắt rule ở cấp file này là giải pháp thực dụng, an toàn vì
+ * toàn bộ các "method" bị flag ở đây đều là jest.fn() giả lập.
+ */
+/* eslint-disable @typescript-eslint/unbound-method */
+
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ConflictException,
@@ -21,6 +34,17 @@ import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { RolesGuard } from '../../common/guards/role.guard';
 import { UserRole } from '../../common/enums/user-role.enum';
+
+/**
+ * Lấy kiểu trả về thật của UsersService trực tiếp từ chính class (thay vì
+ * import lại `User`/`UserResponseDto` và đoán sai đường dẫn file entity/dto).
+ * Nhờ vậy các chỗ `.mockResolvedValue(x as any)` phía dưới có thể đổi thành
+ * `x as unknown as UserOrNull` / `... as unknown as UserResponseDtoType`,
+ * loại bỏ hoàn toàn kiểu `any` mà không cần biết trước cấu trúc thật của
+ * User/UserResponseDto.
+ */
+type UserOrNull = Awaited<ReturnType<UsersService['findUserByEmailOrNull']>>;
+type UserResponseDtoType = Awaited<ReturnType<UsersService['createUser']>>;
 
 jest.mock('bcrypt');
 
@@ -294,7 +318,7 @@ describe('AuthService', () => {
         id: 'new-user-id',
         email: 'newuser@test.com',
         fullName: 'New User',
-      } as any);
+      } as unknown as UserResponseDtoType);
 
       const result = await authService.register(registerDto);
 
@@ -313,7 +337,9 @@ describe('AuthService', () => {
     });
 
     it('AUTH-UNIT-020: should throw ConflictException when the email already exists', async () => {
-      usersService.findUserByEmailOrNull.mockResolvedValue(mockUser as any);
+      usersService.findUserByEmailOrNull.mockResolvedValue(
+        mockUser as unknown as UserOrNull,
+      );
 
       await expect(authService.register(registerDto)).rejects.toThrow(
         ConflictException,
@@ -326,7 +352,9 @@ describe('AuthService', () => {
 
     it('AUTH-UNIT-021: should normalize the email before persisting it', async () => {
       usersService.findUserByEmailOrNull.mockResolvedValue(null);
-      usersService.createUser.mockResolvedValue({} as any);
+      usersService.createUser.mockResolvedValue(
+        {} as unknown as UserResponseDtoType,
+      );
 
       await authService.register({
         ...registerDto,
@@ -352,7 +380,9 @@ describe('AuthService', () => {
     });
 
     it('AUTH-UNIT-022: should log in successfully and return an AuthResponse', async () => {
-      usersService.findUserByEmailOrNull.mockResolvedValue(mockUser as any);
+      usersService.findUserByEmailOrNull.mockResolvedValue(
+        mockUser as unknown as UserOrNull,
+      );
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       (bcrypt.hash as jest.Mock).mockResolvedValue('new-hashed-refresh-token');
 
@@ -368,7 +398,7 @@ describe('AuthService', () => {
       expect(usersService.updateUser).toHaveBeenCalledTimes(1);
       expect(usersService.updateUser).toHaveBeenCalledWith(
         mockUser.id,
-        expect.objectContaining({ refreshToken: expect.any(String) }),
+        expect.objectContaining({ refreshToken: expect.any(String) as string }),
       );
     });
 
@@ -384,7 +414,9 @@ describe('AuthService', () => {
     });
 
     it('AUTH-UNIT-024: should throw UnauthorizedException when the password is incorrect', async () => {
-      usersService.findUserByEmailOrNull.mockResolvedValue(mockUser as any);
+      usersService.findUserByEmailOrNull.mockResolvedValue(
+        mockUser as unknown as UserOrNull,
+      );
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(authService.login(loginDto)).rejects.toThrow(
@@ -398,7 +430,9 @@ describe('AuthService', () => {
 
   describe('logout()', () => {
     it('AUTH-UNIT-026: should set the refresh token to null', async () => {
-      usersService.updateUser.mockResolvedValue(undefined as any);
+      usersService.updateUser.mockResolvedValue(
+        undefined as unknown as UserResponseDtoType,
+      );
 
       await authService.logout(mockUser.id);
 
@@ -418,7 +452,9 @@ describe('AuthService', () => {
     });
 
     it('AUTH-UNIT-027: should return a new TokenPair when the refresh token is valid', async () => {
-      usersService.findUserByIdOrNull.mockResolvedValue(mockUser as any);
+      usersService.findUserByIdOrNull.mockResolvedValue(
+        mockUser as unknown as UserOrNull,
+      );
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       (bcrypt.hash as jest.Mock).mockResolvedValue('new-hashed-refresh-token');
 
@@ -430,7 +466,7 @@ describe('AuthService', () => {
       });
       expect(usersService.updateUser).toHaveBeenCalledWith(
         mockUser.id,
-        expect.objectContaining({ refreshToken: expect.any(String) }),
+        expect.objectContaining({ refreshToken: expect.any(String) as string }),
       );
     });
 
@@ -446,7 +482,7 @@ describe('AuthService', () => {
       usersService.findUserByIdOrNull.mockResolvedValue({
         ...mockUser,
         refreshToken: null,
-      } as any);
+      } as unknown as UserOrNull);
 
       await expect(
         authService.refreshTokens(mockUser.id, refreshToken),
@@ -454,7 +490,9 @@ describe('AuthService', () => {
     });
 
     it('AUTH-UNIT-030: should throw UnauthorizedException when the token does not match the stored hash (anti-reuse)', async () => {
-      usersService.findUserByIdOrNull.mockResolvedValue(mockUser as any);
+      usersService.findUserByIdOrNull.mockResolvedValue(
+        mockUser as unknown as UserOrNull,
+      );
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
@@ -518,7 +556,11 @@ describe('AccessTokenGuard', () => {
   let guard: AccessTokenGuard;
   let reflector: jest.Mocked<Reflector>;
 
-  const passportBaseProto = Object.getPrototypeOf(AccessTokenGuard.prototype);
+  // `Object.getPrototypeOf` trả về `any`; ép rõ về kiểu chỉ chứa method
+  // `canActivate` mà test này cần spy lên, để tránh lan truyền `any`.
+  const passportBaseProto = Object.getPrototypeOf(
+    AccessTokenGuard.prototype,
+  ) as { canActivate: (...args: unknown[]) => unknown };
 
   const createMockContext = (): ExecutionContext =>
     ({
@@ -572,7 +614,9 @@ describe('AccessTokenGuard', () => {
 describe('RolesGuard', () => {
   let guard: RolesGuard;
   let reflector: jest.Mocked<Reflector>;
-  let usersService: jest.Mocked<UsersService>;
+  // Chỉ mock đúng method RolesGuard thực sự dùng (findUserById), không cần
+  // (và không thể, vì thiếu các method khác) khớp toàn bộ `jest.Mocked<UsersService>`.
+  let usersService: { findUserById: jest.Mock };
 
   const createMockContext = (userId = 'user-uuid-1'): ExecutionContext =>
     ({
@@ -592,7 +636,7 @@ describe('RolesGuard', () => {
     usersService = {
       findUserById: jest.fn(),
     };
-    guard = new RolesGuard(reflector, usersService);
+    guard = new RolesGuard(reflector, usersService as unknown as UsersService);
   });
 
   afterEach(() => {
@@ -614,7 +658,7 @@ describe('RolesGuard', () => {
     usersService.findUserById.mockResolvedValue({
       id: 'user-uuid-1',
       role: UserRole.ADMIN,
-    } as any);
+    });
 
     const result = await guard.canActivate(createMockContext());
 
@@ -626,7 +670,7 @@ describe('RolesGuard', () => {
     usersService.findUserById.mockResolvedValue({
       id: 'user-uuid-1',
       role: UserRole.CUSTOMER,
-    } as any);
+    });
 
     const result = await guard.canActivate(createMockContext());
 
@@ -635,7 +679,7 @@ describe('RolesGuard', () => {
 
   it('AUTH-UNIT-039: should return false when the user no longer exists in the database', async () => {
     reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN]);
-    usersService.findUserById.mockResolvedValue(null as any);
+    usersService.findUserById.mockResolvedValue(null);
 
     const result = await guard.canActivate(createMockContext());
 

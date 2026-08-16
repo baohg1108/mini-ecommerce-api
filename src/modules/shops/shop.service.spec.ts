@@ -6,6 +6,8 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { ObjectLiteral, Repository } from 'typeorm';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 
 import { ShopService } from './shop.service';
 import { Shop } from './entities/shop.entity';
@@ -16,7 +18,9 @@ import { CreateShopDto } from './dtos/create-shop.dto';
 import { UpdateShopDto } from './dtos/update-shop.dto';
 import { RejectShopDto } from './dtos/reject-shop.dto';
 import { SuspendedShopDto } from './dtos/suspended-shop.dto';
+import { PublicShopResponseDto } from './dtos/public-shop-response.dto';
 import { slugify, randomSuffix } from '../../common/utils/slugify';
+import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
 
 jest.mock('../../common/utils/slugify', () => ({
   slugify: jest.fn(),
@@ -35,9 +39,291 @@ const createMockRepository = <
 >(): MockRepository<T> => ({
   findOne: jest.fn(),
   find: jest.fn(),
+  findAndCount: jest.fn(),
   create: jest.fn(),
   save: jest.fn(),
 });
+
+// =========================================================================
+// PHẦN 1 — DTO Validation (class-validator, không cần DB/repository)
+// =========================================================================
+
+describe('CreateShopDto', () => {
+  // SHOP-UNIT-001
+  it('chấp nhận dữ liệu hợp lệ', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      description: 'Chuyên đồ điện tử',
+      logoUrl: 'https://cdn.site.com/logo.png',
+    });
+
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  // SHOP-UNIT-002
+  it('reject khi thiếu shopName', async () => {
+    const dto = plainToInstance(CreateShopDto, { description: 'abc' });
+    const errors = await validate(dto);
+
+    expect(errors.find((e) => e.property === 'shopName')).toBeDefined();
+  });
+
+  // SHOP-UNIT-003
+  it('reject khi shopName < 3 ký tự (MinLength)', async () => {
+    const dto = plainToInstance(CreateShopDto, { shopName: 'AB' });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'shopName');
+
+    expect(err?.constraints).toHaveProperty('minLength');
+  });
+
+  // SHOP-UNIT-005
+  it('reject khi shopName > 200 ký tự (MaxLength)', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'a'.repeat(201),
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'shopName');
+
+    expect(err?.constraints).toHaveProperty('maxLength');
+  });
+
+  // SHOP-UNIT-004 — boundary: đúng 3 ký tự (biên dưới MinLength) phải hợp lệ
+  it('chấp nhận shopName đúng 3 ký tự (biên dưới MinLength)', async () => {
+    const dto = plainToInstance(CreateShopDto, { shopName: 'ABC' });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'shopName');
+
+    expect(err).toBeUndefined();
+  });
+
+  // SHOP-UNIT-006 — boundary: đúng 200 ký tự (biên trên MaxLength) phải hợp lệ
+  it('chấp nhận shopName đúng 200 ký tự (biên trên MaxLength)', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'a'.repeat(200),
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'shopName');
+
+    expect(err).toBeUndefined();
+  });
+
+  // SHOP-UNIT-007
+  it('tự động trim khoảng trắng đầu/cuối shopName (@Transform)', () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: '   Shop Demo   ',
+    });
+
+    expect(dto.shopName).toBe('Shop Demo');
+  });
+
+  // SHOP-UNIT-008
+  it('reject khi logoUrl sai định dạng URL', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      logoUrl: 'not-a-url',
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'logoUrl');
+
+    expect(err?.constraints).toHaveProperty('isUrl');
+  });
+
+  // SHOP-UNIT-009 — logoUrl = null (optional) phải hợp lệ, không lỗi
+  it('chấp nhận logoUrl = null (field optional)', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      logoUrl: null,
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'logoUrl');
+
+    expect(err).toBeUndefined();
+  });
+
+  // SHOP-UNIT-010 — businessLicenseUrl sai định dạng URL
+  it('reject khi businessLicenseUrl sai định dạng URL', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      businessLicenseUrl: 'ftp:/broken',
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'businessLicenseUrl');
+
+    expect(err?.constraints).toHaveProperty('isUrl');
+  });
+
+  // businessLicenseUrl = null (optional) phải hợp lệ
+  it('chấp nhận businessLicenseUrl = null (field optional)', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      businessLicenseUrl: null,
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'businessLicenseUrl');
+
+    expect(err).toBeUndefined();
+  });
+
+  // SHOP-UNIT-011
+  it('reject khi description > 5000 ký tự', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      description: 'a'.repeat(5001),
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'description');
+
+    expect(err?.constraints).toHaveProperty('maxLength');
+  });
+
+  // boundary: description đúng 5000 ký tự phải hợp lệ
+  it('chấp nhận description đúng 5000 ký tự (biên trên MaxLength)', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      description: 'a'.repeat(5000),
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'description');
+
+    expect(err).toBeUndefined();
+  });
+
+  // returnPolicy / shippingPolicy > 5000 ký tự
+  it('reject khi returnPolicy > 5000 ký tự', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      returnPolicy: 'a'.repeat(5001),
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'returnPolicy');
+
+    expect(err?.constraints).toHaveProperty('maxLength');
+  });
+
+  it('reject khi shippingPolicy > 5000 ký tự', async () => {
+    const dto = plainToInstance(CreateShopDto, {
+      shopName: 'Shop ABC',
+      shippingPolicy: 'a'.repeat(5001),
+    });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'shippingPolicy');
+
+    expect(err?.constraints).toHaveProperty('maxLength');
+  });
+});
+
+describe('RejectShopDto', () => {
+  // SHOP-UNIT-012
+  it('chấp nhận reason hợp lệ', async () => {
+    const dto = plainToInstance(RejectShopDto, {
+      reason: 'Thiếu giấy phép kinh doanh',
+    });
+
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  // SHOP-UNIT-013
+  it('reject khi thiếu reason', async () => {
+    const dto = plainToInstance(RejectShopDto, {});
+    const errors = await validate(dto);
+
+    expect(errors.find((e) => e.property === 'reason')).toBeDefined();
+  });
+
+  // SHOP-UNIT-014
+  it('reject khi reason > 500 ký tự', async () => {
+    const dto = plainToInstance(RejectShopDto, { reason: 'a'.repeat(501) });
+    const errors = await validate(dto);
+    const err = errors.find((e) => e.property === 'reason');
+
+    expect(err?.constraints).toHaveProperty('maxLength');
+  });
+});
+
+describe('SuspendedShopDto', () => {
+  // SHOP-UNIT-015
+  it('chấp nhận reasonSuspended hợp lệ', async () => {
+    const dto = plainToInstance(SuspendedShopDto, {
+      reasonSuspended: 'Vi phạm chính sách bán hàng cấm',
+    });
+
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  // SHOP-UNIT-016
+  it('reject khi thiếu reasonSuspended', async () => {
+    const dto = plainToInstance(SuspendedShopDto, {});
+    const errors = await validate(dto);
+
+    expect(errors.find((e) => e.property === 'reasonSuspended')).toBeDefined();
+  });
+});
+
+describe('UpdateShopDto', () => {
+  // SHOP-UNIT-018
+  it('object rỗng {} hợp lệ (mọi field optional)', async () => {
+    const dto = plainToInstance(UpdateShopDto, {});
+
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  // SHOP-UNIT-019
+  it('reject khi logoUrl sai định dạng nếu có truyền', async () => {
+    const dto = plainToInstance(UpdateShopDto, { logoUrl: 'invalid-url' });
+    const errors = await validate(dto);
+
+    expect(errors.find((e) => e.property === 'logoUrl')).toBeDefined();
+  });
+});
+
+describe('PublicShopResponseDto', () => {
+  // SHOP-UNIT-052 — Security-critical: không được lộ field nội bộ
+  it('không chứa field nội bộ nhạy cảm của shop entity', () => {
+    const fullShop = {
+      id: 'shop-1',
+      userId: 'user-1',
+      shopName: 'Shop ABC',
+      slug: 'shop-abc',
+      description: 'Mô tả',
+      logoUrl: 'https://cdn.site.com/logo.png',
+      businessLicenseUrl: 'https://cdn.site.com/license.pdf',
+      returnPolicy: 'Đổi trả 7 ngày',
+      shippingPolicy: 'Giao hàng 3-5 ngày',
+      status: ShopStatus.ACTIVE,
+      rejectionReason: 'Lý do cũ, không được lộ',
+      avgRating: 4.5,
+      approvedAt: new Date(),
+      approvedBy: 'admin-1',
+      rejectedAt: null,
+      rejectedBy: null,
+      suspendedReason: null,
+      suspendedAt: null,
+      suspendedBy: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as unknown as Shop;
+
+    const dto = new PublicShopResponseDto(fullShop);
+
+    const forbiddenKeys = [
+      'businessLicenseUrl',
+      'rejectionReason',
+      'approvedBy',
+      'status',
+      'userId',
+      'suspendedReason',
+      'suspendedBy',
+    ];
+    for (const key of forbiddenKeys) {
+      expect(dto).not.toHaveProperty(key);
+    }
+  });
+});
+
+// =========================================================================
+// PHẦN 2 — ShopService (repository mocked qua @nestjs/testing)
+// =========================================================================
 
 describe('ShopService', () => {
   let service: ShopService;
@@ -155,7 +441,7 @@ describe('ShopService', () => {
       expect(shopRepository.save).not.toHaveBeenCalled();
     });
 
-    it('SHOP-003 (adapted): duplicate slug → a new slug is generated via randomSuffix instead of throwing', async () => {
+    it('SHOP-003: duplicate slug → a new slug is generated via randomSuffix instead of throwing', async () => {
       userRepository.findOne!.mockResolvedValue({ ...mockUser });
       shopRepository
         .findOne!.mockResolvedValueOnce(null)
@@ -190,7 +476,7 @@ describe('ShopService', () => {
       expect(shopRepository.findOne).not.toHaveBeenCalled();
     });
 
-    it('SHOP-005 (adapted): CUSTOMER user is automatically promoted to SELLER (FR-06)', async () => {
+    it('SHOP-005: CUSTOMER user is automatically promoted to SELLER (FR-06)', async () => {
       const customerUser = { ...mockUser, role: UserRole.CUSTOMER };
       userRepository.findOne!.mockResolvedValue(customerUser);
       shopRepository
@@ -340,6 +626,30 @@ describe('ShopService', () => {
         expect(result.status).toBe(ShopStatus.PENDING);
         expect(result.rejectionReason).toBeNull();
         expect(shopRepository.create).not.toHaveBeenCalled();
+      });
+
+      it('SHOP-034: excludes its own shop id when checking slug conflict → does not call randomSuffix unnecessarily', async () => {
+        const rejectedShop = {
+          ...baseShop,
+          id: 'shop-id-1',
+          slug: 'test-shop',
+          status: ShopStatus.REJECTED,
+        };
+        userRepository.findOne!.mockResolvedValue({ ...mockUser });
+        shopRepository
+          .findOne!.mockResolvedValueOnce(rejectedShop) // lookup by userId
+          .mockResolvedValueOnce(rejectedShop); // lookup by slug -> chính nó
+        shopRepository.save!.mockImplementation((data: any) =>
+          Promise.resolve(data as Shop),
+        );
+        userRepository.save!.mockResolvedValue({
+          ...mockUser,
+          role: UserRole.SELLER,
+        });
+
+        await service.registerShop(mockUser.id, createShopDto);
+
+        expect(mockRandomSuffix).not.toHaveBeenCalled();
       });
     });
   });
@@ -506,7 +816,7 @@ describe('ShopService', () => {
       ).rejects.toThrow('DB error');
     });
 
-    it('SHOP-037 (adapted): suspending twice in a row → second call throws ConflictException (not idempotent)', async () => {
+    it('SHOP-037: suspending twice in a row → second call throws ConflictException (not idempotent)', async () => {
       const activeShop = { ...baseShop, status: ShopStatus.ACTIVE };
       shopRepository.findOne!.mockResolvedValueOnce(activeShop);
       shopRepository.save!.mockImplementationOnce((data: any) =>
@@ -568,7 +878,7 @@ describe('ShopService', () => {
       );
     });
 
-    it('SHOP-038 (adapted): unlocking twice in a row → second call throws ConflictException (not idempotent)', async () => {
+    it('SHOP-038: unlocking twice in a row → second call throws ConflictException (not idempotent)', async () => {
       const suspendedShop = { ...baseShop, status: ShopStatus.SUSPENDED };
       shopRepository.findOne!.mockResolvedValueOnce(suspendedShop);
       shopRepository.save!.mockImplementationOnce((data: any) =>
@@ -617,7 +927,7 @@ describe('ShopService', () => {
       expect(shopRepository.save).not.toHaveBeenCalled();
     });
 
-    it("SHOP-022 (adapted): a different userId with no shop → NotFoundException (cannot update someone else's shop)", async () => {
+    it("SHOP-022: a different userId with no shop → NotFoundException (cannot update someone else's shop)", async () => {
       shopRepository.findOne!.mockResolvedValue(null);
 
       await expect(
@@ -819,6 +1129,49 @@ describe('ShopService', () => {
       await expect(service.getShopById('not-exist')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  // SHOP-UNIT-050 — was missing from the original draft: public listing pagination
+  describe('getAllActiveShops', () => {
+    it('SHOP-039: only returns ACTIVE shops, ordered DESC, with correct pagination params', async () => {
+      const activeShops = [
+        { ...baseShop, id: 'shop-a', status: ShopStatus.ACTIVE },
+        { ...baseShop, id: 'shop-b', status: ShopStatus.ACTIVE },
+      ];
+      shopRepository.findAndCount!.mockResolvedValue([activeShops, 25]);
+
+      const query = new PaginationQueryDto();
+      query.page = 2;
+      query.limit = 10;
+
+      const result = await service.getAllActiveShops(query);
+
+      expect(shopRepository.findAndCount).toHaveBeenCalledWith({
+        where: { status: ShopStatus.ACTIVE },
+        order: { createdAt: 'DESC' },
+        skip: 10,
+        take: 10,
+      });
+      expect(result.total).toBe(25);
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0]).toBeInstanceOf(PublicShopResponseDto);
+    });
+
+    it('SHOP-040: defaults to page=1, limit=20 when not provided', async () => {
+      shopRepository.findAndCount!.mockResolvedValue([[], 0]);
+
+      const query = new PaginationQueryDto();
+      query.page = 1;
+      query.limit = 20;
+
+      const result = await service.getAllActiveShops(query);
+
+      expect(shopRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+      expect(result.data).toEqual([]);
+      expect(result.total).toBe(0);
     });
   });
 });

@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { NotFoundException } from '@nestjs/common';
+import { Repository } from 'typeorm';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { UsersService } from './users.service';
@@ -10,14 +11,51 @@ import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
 
-function createMockRepository() {
+/**
+ * `create`/`merge` nhận và trả `Record<string, unknown>` (thay vì `Partial<User>`)
+ * vì service truyền vào đó những object trung gian chứa field không thuộc
+ * entity `User` (vd. `passwordHash` trước khi map, hoặc test cố tình kiểm tra
+ * `createArgs.password` phải là undefined). Dùng `Record<string, unknown>`
+ * thay vì `any` để vẫn truy cập field tuỳ ý mà không bị `no-unsafe-*`.
+ */
+interface MockRepository {
+  create: jest.Mock<Record<string, unknown>, [Record<string, unknown>]>;
+  save: jest.Mock<Promise<Record<string, unknown>>, [Record<string, unknown>]>;
+  findOne: jest.Mock<Promise<User | null>, [unknown]>;
+  findAndCount: jest.Mock<Promise<[User[], number]>, [unknown]>;
+  merge: jest.Mock<
+    Record<string, unknown>,
+    [Record<string, unknown>, Record<string, unknown>]
+  >;
+  remove: jest.Mock<
+    Promise<Record<string, unknown>>,
+    [Record<string, unknown>]
+  >;
+}
+
+function createMockRepository(): MockRepository {
   return {
-    create: jest.fn((data) => ({ ...data })),
-    save: jest.fn(async (entity) => entity),
-    findOne: jest.fn(),
-    findAndCount: jest.fn(),
-    merge: jest.fn((target, dto) => Object.assign(target, dto)),
-    remove: jest.fn(async (entity) => entity),
+    create: jest.fn(
+      (data: Record<string, unknown>): Record<string, unknown> => ({
+        ...data,
+      }),
+    ),
+    save: jest.fn(
+      (entity: Record<string, unknown>): Promise<Record<string, unknown>> =>
+        Promise.resolve(entity),
+    ),
+    findOne: jest.fn<Promise<User | null>, [unknown]>(),
+    findAndCount: jest.fn<Promise<[User[], number]>, [unknown]>(),
+    merge: jest.fn(
+      (
+        target: Record<string, unknown>,
+        dto: Record<string, unknown>,
+      ): Record<string, unknown> => Object.assign(target, dto),
+    ),
+    remove: jest.fn(
+      (entity: Record<string, unknown>): Promise<Record<string, unknown>> =>
+        Promise.resolve(entity),
+    ),
   };
 }
 
@@ -47,7 +85,7 @@ describe('UsersService (Unit) — Production Test Set', () => {
 
   beforeEach(() => {
     repo = createMockRepository();
-    service = new UsersService(repo as any);
+    service = new UsersService(repo as unknown as Repository<User>);
   });
 
   it('USER-UNIT-001: should create user successfully with valid input', async () => {
@@ -57,11 +95,14 @@ describe('UsersService (Unit) — Production Test Set', () => {
       fullName: 'New User',
     };
 
-    repo.save.mockImplementation(async (entity) => ({
-      ...entity,
-      id: 'generated-id',
-      createdAt: new Date(),
-    }));
+    repo.save.mockImplementation(
+      (entity: Record<string, unknown>): Promise<Record<string, unknown>> =>
+        Promise.resolve({
+          ...entity,
+          id: 'generated-id',
+          createdAt: new Date(),
+        }),
+    );
 
     const result = await service.createUser(dto);
 
@@ -94,16 +135,20 @@ describe('UsersService (Unit) — Production Test Set', () => {
       fullName: 'No Leak',
     };
 
-    repo.save.mockImplementation(async (entity) => ({
-      ...entity,
-      id: 'generated-id',
-      passwordHash: '$2b$12$somehashvalue.......................',
-      createdAt: new Date(),
-    }));
+    repo.save.mockImplementation(
+      (entity: Record<string, unknown>): Promise<Record<string, unknown>> =>
+        Promise.resolve({
+          ...entity,
+          id: 'generated-id',
+          passwordHash: '$2b$12$somehashvalue.......................',
+          createdAt: new Date(),
+        }),
+    );
 
-    const result: any = await service.createUser(dto);
+    const result = await service.createUser(dto);
+    const resultAsRecord = result as unknown as Record<string, unknown>;
 
-    expect(result.passwordHash).toBeUndefined();
+    expect(resultAsRecord.passwordHash).toBeUndefined();
     expect(Object.prototype.hasOwnProperty.call(result, 'passwordHash')).toBe(
       false,
     );
@@ -292,7 +337,7 @@ describe('UsersService (Unit) — Production Test Set', () => {
     const query = plainToInstance(PaginationQueryDto, {});
 
     const result = await service.findAllUsers(query);
-    const item: any = result.data[0];
+    const item = result.data[0] as unknown as Record<string, unknown>;
 
     expect(item.lastLoginAt).toEqual(user.lastLoginAt);
     expect(item.passwordHash).toBeUndefined();
