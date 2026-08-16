@@ -17,6 +17,9 @@ import { PaginationQueryDto } from '../../common/dtos/pagination-query.dto';
 import { ProductDetailsResponseDto } from './dtos/product-details.response.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ProductImage } from './entities/product-image.entity';
+import { SearchProductDto, ProductSortBy } from './dtos/search-product.dto';
+import { SearchProductResponseDto } from './dtos/search-product.response.dto';
+import { ProductListItemDto } from './dtos/public-product-response.dto';
 @Injectable()
 export class ProductService {
   constructor(
@@ -311,5 +314,93 @@ export class ProductService {
       );
     }
     return product;
+  }
+
+  // UC-06 + FR-16: search & filter product using QueryBuilder
+  async search(dto: SearchProductDto): Promise<SearchProductResponseDto> {
+    const {
+      keyword,
+      categoryId,
+      shopId,
+      minPrice,
+      maxPrice,
+      minRating,
+      sortBy = ProductSortBy.NEWEST,
+      page,
+      limit,
+    } = dto;
+
+    const qb = this.productRepo
+      .createQueryBuilder('product')
+      .leftJoin('product.category', 'category')
+      .addSelect(['category.id', 'category.name', 'category.slug'])
+      .where('product.status = :status', { status: 'active' });
+
+    if (keyword) {
+      qb.andWhere(
+        `(product.name ILIKE :keyword OR EXISTS (
+      SELECT 1 FROM product_variants v
+      WHERE v.product_id = product.id AND v.sku ILIKE :keyword
+    ))`,
+        { keyword: `%${keyword}%` },
+      );
+    }
+    if (categoryId) {
+      qb.andWhere('product.categoryId = :categoryId', { categoryId });
+    }
+    if (shopId) {
+      qb.andWhere('product.shopId = :shopId', { shopId });
+    }
+    if (minPrice !== undefined) {
+      qb.andWhere('product.basePrice >= :minPrice', { minPrice });
+    }
+    if (maxPrice !== undefined) {
+      qb.andWhere('product.basePrice <= :maxPrice', { maxPrice });
+    }
+    if (minRating !== undefined) {
+      qb.andWhere('product.avgRating >= :minRating', { minRating });
+    }
+
+    switch (sortBy) {
+      case ProductSortBy.PRICE_ASC:
+        qb.orderBy('product.basePrice', 'ASC');
+        break;
+      case ProductSortBy.PRICE_DESC:
+        qb.orderBy('product.basePrice', 'DESC');
+        break;
+      case ProductSortBy.BEST_SELLING:
+        qb.orderBy('product.soldCount', 'DESC');
+        break;
+      case ProductSortBy.RATING:
+        qb.orderBy('product.avgRating', 'DESC');
+        break;
+      default:
+        qb.orderBy('product.createdAt', 'DESC');
+        break;
+    }
+
+    qb.skip((page - 1) * limit).take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+
+    if (items.length === 0) {
+      return new SearchProductResponseDto([], total, page, limit);
+    }
+
+    const productIds = items.map((p) => p.id);
+    const imagesMap = await this.productRepo
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.images', 'images')
+      .where('product.id IN (:...productIds)', { productIds })
+      .getMany();
+
+    const imagesById = new Map(imagesMap.map((p) => [p.id, p.images]));
+
+    const mappedItems = items.map((item) => {
+      item.images = imagesById.get(item.id) ?? [];
+      return new ProductListItemDto(item);
+    });
+
+    return new SearchProductResponseDto(mappedItems, total, page, limit);
   }
 }

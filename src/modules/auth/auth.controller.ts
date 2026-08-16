@@ -48,7 +48,7 @@ export class AuthController {
   }
 
   // refresh token
-  // @IsPublic()
+  @IsPublic()
   @Post('refresh')
   @UseGuards(RefreshTokenGuard)
   @HttpCode(HttpStatus.OK)
