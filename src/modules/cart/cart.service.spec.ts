@@ -106,16 +106,27 @@ describe('CartService', () => {
       createQueryBuilder: jest.fn(),
       findOne: jest.fn(),
       find: jest.fn(),
-      create: jest.fn((_entity: any, data: any) => ({ ...data })),
-      save: jest.fn((a: any, b?: any) => {
-        const target = b !== undefined ? b : a;
-        return Promise.resolve({ id: target.id ?? 'generated-id', ...target });
-      }),
+      create: jest.fn(
+        (
+          _entityClass: unknown,
+          data: Record<string, unknown>,
+        ): Record<string, unknown> => ({ ...data }),
+      ),
+      save: jest.fn(
+        (
+          a: unknown,
+          b?: Record<string, unknown>,
+        ): Promise<Record<string, unknown>> => {
+          const target = (b !== undefined ? b : a) as Record<string, unknown>;
+          const id = target.id ?? 'generated-id';
+          return Promise.resolve({ ...target, id });
+        },
+      ),
       remove: jest.fn().mockResolvedValue(undefined),
     };
 
     dataSource = {
-      transaction: jest.fn((cb: any) => cb(manager)),
+      transaction: jest.fn((cb: (m: typeof manager) => unknown) => cb(manager)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -499,7 +510,7 @@ describe('CartService', () => {
           id: 'ci-3',
           variant: buildVariant({ product: buildProduct({ shop: shopB }) }),
         }),
-      ] as any;
+      ] as unknown as CartItem[];
 
       const result = service.groupItemsByShop(items);
 
@@ -511,7 +522,10 @@ describe('CartService', () => {
     });
 
     it('SHOP-UNIT-025: should throw BadRequestException when item cannot determine shop', () => {
-      const orphanItem = buildCartItem({ id: 'ci-9', variant: null }) as any;
+      const orphanItem = buildCartItem({
+        id: 'ci-9',
+        variant: null,
+      }) as unknown as CartItem;
 
       expect(() => service.groupItemsByShop([orphanItem])).toThrow(
         new BadRequestException('Cannot resolve shop for cart item ci-9'),
