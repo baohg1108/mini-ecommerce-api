@@ -1,8 +1,8 @@
 # SPRINT 03 TEST REPORT
 
-**Module:** Giỏ hàng & Tìm kiếm (Cart & Search)
-**Dự án:** Mini E-commerce System
-**Thời gian:** 10/08/2026 – 15/08/2026
+**Module:** Giỏ hàng & Tìm kiếm (Cart & Search)  
+**Dự án:** Mini E-commerce System  
+**Thời gian:** 10/08/2026 – 15/08/2026  
 **Nhóm:** Hoàng Gia Bảo, Văn Ngọc Phương
 
 ---
@@ -22,17 +22,6 @@
 - Inventory validation khi thao tác với giỏ hàng.
 - Clear Cart sau Checkout.
 - Thiết kế và kiểm thử Unit Test, E2E Test.
-
-### 1.1 Implementation Tasks (Văn Ngọc Phương)
-
-| Task   | Branch                                       | Nội dung thực hiện                                         | Jira     | Status |
-| ------ | -------------------------------------------- | ---------------------------------------------------------- | -------- | ------ |
-| BE-028 | `feat/BE-028/upsert-variants`                | Implement API tạo/cập nhật hàng loạt Product Variant / SKU | SCRUM-30 | Done   |
-| BE-029 | `feat/BE-029/cart-inventory-validation`      | Implement inventory validation khi thao tác với Cart       | SCRUM-31 | Done   |
-| BE-030 | `feat/BE-030/search-product`                 | Implement API tìm kiếm sản phẩm bằng Query Builder         | SCRUM-32 | Done   |
-| BE-032 | `feat/BE-032/filter-product-pagination`      | Implement filter sản phẩm và pagination                    | SCRUM-34 | Done   |
-| BE-034 | `feat/BE-034/optimize-search-query-n-plus-1` | Tối ưu Search Query và hạn chế N+1 Query                   | SCRUM-36 | Done   |
-| BE-036 | `feat/BE-036/search-by-sku`                  | Implement tìm kiếm sản phẩm theo SKU                       | SCRUM-38 | Done   |
 
 ---
 
@@ -126,18 +115,6 @@ Tuy nhiên, execution evidence ở tầng E2E/API chưa đầy đủ do E2E Test
 | Regression – Gom nhóm giỏ hàng               | SCRUM-37                    | Unit / E2E | Unit Executed / E2E Deferred |
 | Clear Cart sau Checkout                      | SCRUM-35                    | Unit / E2E | Unit Executed / E2E Deferred |
 
-### 4.1 Backend Task Traceability (Văn Ngọc Phương)
-
-| Task            | Chức năng                   | Unit/E2E |
-| --------------- | --------------------------- | -------- |
-| BE-028          | Variant/SKU Upsert          | 18/5     |
-| BE-029          | Cart Inventory Validation   | 7/7      |
-| BE-030 & BE-032 | Search, Filter & Pagination | 12/2     |
-| BE-034          | Tối ưu N+1                  | 2/0      |
-| BE-036          | Search by SKU               | 2/2      |
-
-_(BE-030 & BE-032 dùng chung hàm `search()` nên gộp chung số liệu. Unit đã chạy trong Sprint 03; E2E deferred sang Sprint 07. Chi tiết Test ID tham chiếu file TEST_MATRIX_MINI-ECOMMERCE.)_
-
 ---
 
 ## 5. Test Case Summary
@@ -178,8 +155,6 @@ _(BE-030 & BE-032 dùng chung hàm `search()` nên gộp chung số liệu. Unit
 
 > 60 / 78 = **76.9%**
 
-> Lưu ý: 39 Unit Test được thực thi trong Sprint 03, trong khi Production Unit Test Scope là 32. Điều này phản ánh một số Unit Test bổ sung được thực thi trong quá trình development/testing nhưng không thuộc Production Test Scope chính thức.
-
 ---
 
 ## 6. Test Priority
@@ -192,11 +167,13 @@ Các test case được phân loại theo **Risk-Based Testing**, dựa trên m�
 | **P1**    | High     |       37 |    47.4% | Core business functionality và validation quan trọng                   |
 | **P2**    | Medium   |       14 |    18.0% | Edge case và supporting functionality                                  |
 | **P3**    | Low      |        0 |       0% | Nice-to-have / mức độ ưu tiên thấp                                     |
-| **Total** |          |   **78** | **100%** |                                                                        |
+| **Total** |          |   **78** | **100%** |
 
 ### Priority Strategy
 
-Thứ tự ưu tiên kiểm thử: **P0 → P1 → P2 → P3**
+Thứ tự ưu tiên kiểm thử:
+
+**P0 → P1 → P2 → P3**
 
 - **P0:** Critical, bắt buộc kiểm thử trước Production Release.
 - **P1:** High, ưu tiên kiểm thử sau P0 và cần đảm bảo đối với core business.
@@ -209,8 +186,8 @@ Thứ tự ưu tiên kiểm thử: **P0 → P1 → P2 → P3**
 
 | Bug ID      | Mô tả                                                                    | Phát hiện qua | Trạng thái |
 | ----------- | ------------------------------------------------------------------------ | ------------- | ---------- |
-| BUG-004     | Thông báo lỗi trả về không đúng định dạng, liên quan BE-14, BE-16, BE-18 | Postman / API | Fixed      |
-| BUG-003     | Thiếu phân quyền cho nhiều API trong dự án                               | Postman / API | Fixed      |
+| SP3-BUG-004 | Thông báo lỗi trả về không đúng định dạng, liên quan BE-14, BE-16, BE-18 | Postman / API | Fixed      |
+| SP3-BUG-003 | Thiếu phân quyền cho nhiều API trong dự án                               | Postman / API | Fixed      |
 | SP3-BUG-001 | Sai ngôn ngữ khi trả về lỗi                                              | Postman / API | Fixed      |
 | SP3-BUG-002 | Chưa chuẩn hoá slug trong Product                                        | Postman / API | Fixed      |
 
