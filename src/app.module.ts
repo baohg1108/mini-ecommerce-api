@@ -18,6 +18,8 @@ import { AccessTokenGuard } from './common/guards/access-token.guard';
 import { SeedModule } from './databases/seeds/seed.module';
 import { ProductVariantModule } from './modules/product-variant/product-variant.module';
 import { CartModule } from './modules/cart/cart.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { PaymentModule } from './modules/payment/payment.module';
 
 @Module({
   imports: [
@@ -47,6 +49,8 @@ import { CartModule } from './modules/cart/cart.module';
     SeedModule,
     ProductVariantModule,
     CartModule,
+    OrdersModule,
+    PaymentModule,
   ],
   controllers: [ProductImageController],
   providers: [
