@@ -121,7 +121,7 @@ export class OrdersService {
       orderItemsData.push({
         variantId: variant.id,
         productNameSnapshot: cartItem.productName ?? '',
-        variantAttributesSnapshot: (variant as any).attributes ?? {},
+        variantAttributesSnapshot: variant.attributes ?? {},
         quantity: cartItem.quantity,
         priceAtOrder: price.toFixed(2),
         lineTotal: lineTotal.toFixed(2),
