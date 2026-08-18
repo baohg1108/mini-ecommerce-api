@@ -20,6 +20,7 @@ import { ProductImage } from './product-image.entity';
 @Index('ix_products_shop', ['shopId'])
 @Index('ix_products_category', ['categoryId'])
 @Index('ix_products_status', ['status'])
+@Index('ix_products_created_at', ['createdAt'])
 @Check(
   `"status" IN ('pending','active','rejected','hidden','out_of_stock','removed')`,
 )
