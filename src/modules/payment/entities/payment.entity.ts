@@ -33,6 +33,15 @@ export class Payment {
   status!: PaymentStatus;
 
   @Column({
+    name: 'gateway_order_id',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+    unique: true,
+  })
+  gatewayOrderId?: string;
+
+  @Column({
     name: 'gateway_txn_id',
     type: 'varchar',
     length: 100,

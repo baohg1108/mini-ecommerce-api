@@ -46,11 +46,27 @@ export const envSchema = z.object({
     .max(255)
     .default('7d'),
 
+
   // VNPay configuration
   VNPAY_TMN_CODE: z.string().trim().min(1),
   VNPAY_HASH_SECRET: z.string().trim().min(1),
   VNPAY_PAYMENT_URL: z.string().trim().url(),
   VNPAY_RETURN_URL: z.string().trim().url(),
+  // Momo configuration
+  // https://developers.momo.vn/v3/docs/payment/api/wallet/onetime
+  MOMO_PARTNER_CODE: z.string().trim().min(1),
+  MOMO_ACCESS_KEY: z.string().trim().min(1),
+  MOMO_SECRET_KEY: z.string().trim().min(1),
+  MOMO_API_ENDPOINT: z
+    .string()
+    .trim()
+    .url()
+    .default('https://test-payment.momo.vn/v2/gateway/api/create'),
+  MOMO_REDIRECT_URL: z.string().trim().url(),
+  MOMO_IPN_URL: z.string().trim().url(),
+  MOMO_REQUEST_TYPE: z.string().trim().min(1).default('captureWallet'),
+  MOMO_PARTNER_NAME: z.string().trim().min(1).default('Mini Ecommerce'),
+  MOMO_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).default(10000),
 });
 
 export type EnvSchema = z.infer<typeof envSchema>;
