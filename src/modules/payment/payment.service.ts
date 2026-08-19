@@ -1,16 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Payment } from './entities/payment.entity';
 import { Order } from '../orders/entities/order.entity';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
+import { OrderStatus } from '../../common/enums/order-status.enum';
 
 @Injectable()
 export class PaymentService {
   constructor(
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async createForOrder(
@@ -54,12 +56,33 @@ export class PaymentService {
     return payment;
   }
 
+  async findByGatewayOrderId(gatewayOrderId: string): Promise<Payment | null> {
+    return this.paymentRepository.findOne({ where: { gatewayOrderId } });
+  }
+
+  async attachGatewayOrderId(
+    paymentId: string,
+    gatewayOrderId: string,
+  ): Promise<Payment> {
+    const payment = await this.paymentRepository.findOne({
+      where: { id: paymentId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException(`Payment ${paymentId} not found`);
+    }
+
+    payment.gatewayOrderId = gatewayOrderId;
+    return this.paymentRepository.save(payment);
+  }
+
   async markSuccess(
     manager: EntityManager,
     orderId: string,
     data: {
       gatewayTxnId?: string;
       gatewayResponseCode?: string;
+      gatewaySignature?: string;
       rawCallbackPayload?: Record<string, unknown>;
     },
   ): Promise<Payment> {
@@ -74,13 +97,30 @@ export class PaymentService {
     if (data.gatewayTxnId) payment.gatewayTxnId = data.gatewayTxnId;
     if (data.gatewayResponseCode)
       payment.gatewayResponseCode = data.gatewayResponseCode;
+    if (data.gatewaySignature) payment.gatewaySignature = data.gatewaySignature;
     if (data.rawCallbackPayload)
       payment.rawCallbackPayload = data.rawCallbackPayload;
 
-    return manager.save(Payment, payment);
+    const saved = await manager.save(Payment, payment);
+
+    await manager.update(
+      Order,
+      { id: orderId },
+      { status: OrderStatus.PAID_PENDING_CONFIRMATION },
+    );
+
+    return saved;
   }
 
-  async markFailed(manager: EntityManager, orderId: string): Promise<Payment> {
+  async markFailed(
+    manager: EntityManager,
+    orderId: string,
+    data?: {
+      gatewayResponseCode?: string;
+      gatewaySignature?: string;
+      rawCallbackPayload?: Record<string, unknown>;
+    },
+  ): Promise<Payment> {
     const payment = await manager.findOne(Payment, { where: { orderId } });
 
     if (!payment) {
@@ -88,6 +128,56 @@ export class PaymentService {
     }
 
     payment.status = PaymentStatus.FAILED;
-    return manager.save(Payment, payment);
+    if (data?.gatewayResponseCode)
+      payment.gatewayResponseCode = data.gatewayResponseCode;
+    if (data?.gatewaySignature)
+      payment.gatewaySignature = data.gatewaySignature;
+    if (data?.rawCallbackPayload)
+      payment.rawCallbackPayload = data.rawCallbackPayload;
+
+    const saved = await manager.save(Payment, payment);
+
+    await manager.update(
+      Order,
+      { id: orderId },
+      { status: OrderStatus.PAYMENT_FAILED },
+    );
+
+    return saved;
+  }
+
+  async markSuccessByGatewayOrderId(
+    gatewayOrderId: string,
+    data: {
+      gatewayTxnId?: string;
+      gatewayResponseCode?: string;
+      gatewaySignature?: string;
+      rawCallbackPayload?: Record<string, unknown>;
+    },
+  ): Promise<Payment | null> {
+    return this.dataSource.transaction(async (manager) => {
+      const payment = await manager.findOne(Payment, {
+        where: { gatewayOrderId },
+      });
+      if (!payment) return null;
+      return this.markSuccess(manager, payment.orderId, data);
+    });
+  }
+
+  async markFailedByGatewayOrderId(
+    gatewayOrderId: string,
+    data?: {
+      gatewayResponseCode?: string;
+      gatewaySignature?: string;
+      rawCallbackPayload?: Record<string, unknown>;
+    },
+  ): Promise<Payment | null> {
+    return this.dataSource.transaction(async (manager) => {
+      const payment = await manager.findOne(Payment, {
+        where: { gatewayOrderId },
+      });
+      if (!payment) return null;
+      return this.markFailed(manager, payment.orderId, data);
+    });
   }
 }
