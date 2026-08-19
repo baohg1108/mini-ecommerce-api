@@ -22,7 +22,6 @@ import { VnpayService } from './vnpay/vnpay.service';
 import { MomoService } from './momo/momo.service';
 import { MomoPaymentResponseDto } from './momo/dtos/momo-payment-response.dto';
 import { MomoIpnDto } from './momo/dtos/momo-ipn.dto';
-import { CreatePaymentUrlDto } from './dtos/create-payment-url.dto';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
