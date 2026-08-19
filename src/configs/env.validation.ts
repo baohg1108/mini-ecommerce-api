@@ -45,6 +45,12 @@ export const envSchema = z.object({
     .min(1)
     .max(255)
     .default('7d'),
+
+  // VNPay configuration
+  VNPAY_TMN_CODE: z.string().trim().min(1),
+  VNPAY_HASH_SECRET: z.string().trim().min(1),
+  VNPAY_PAYMENT_URL: z.string().trim().url(),
+  VNPAY_RETURN_URL: z.string().trim().url(),
 });
 
 export type EnvSchema = z.infer<typeof envSchema>;
