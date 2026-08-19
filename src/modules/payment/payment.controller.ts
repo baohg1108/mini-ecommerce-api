@@ -10,15 +10,19 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order } from '../orders/entities/order.entity';
 import { PaymentService } from './payment.service';
+import { VnpayService } from './vnpay/vnpay.service';
 import { MomoService } from './momo/momo.service';
 import { MomoPaymentResponseDto } from './momo/dtos/momo-payment-response.dto';
 import { MomoIpnDto } from './momo/dtos/momo-ipn.dto';
+import { CreatePaymentUrlDto } from './dtos/create-payment-url.dto';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
@@ -34,11 +38,31 @@ export class PaymentController {
 
   constructor(
     private readonly paymentService: PaymentService,
+    private readonly vnpayService: VnpayService,
     private readonly momoService: MomoService,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
   ) {}
 
+  // FR-25: sinh URL thanh toán VNPay
+  @Post(':orderId/vnpay')
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER)
+  @HttpCode(HttpStatus.OK)
+  async createVnpayUrl(
+    @CurrentUserId() userId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Req() req: Request,
+  ) {
+    const ipAddr =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket.remoteAddress ||
+      '127.0.0.1';
+
+    return this.vnpayService.createPaymentUrl(userId, orderId, ipAddr);
+  }
+
+  // FR-26: tạo thanh toán Momo
   @Post(':orderId/momo')
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles(UserRole.CUSTOMER)
@@ -95,6 +119,7 @@ export class PaymentController {
     });
   }
 
+  // Momo IPN callback (server-to-server, không cần auth)
   @IsPublic()
   @Post('momo/ipn')
   @HttpCode(HttpStatus.NO_CONTENT)
