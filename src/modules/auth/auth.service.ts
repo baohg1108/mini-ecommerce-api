@@ -15,6 +15,7 @@ import { StringValue } from 'ms';
 import { TokenPair } from './interfaces/token-pair.interface';
 import { AuthResponse } from './interfaces/auth-response.interface';
 import { normalizeEmail } from '../../common/utils/pagination.util';
+import { UserStatus } from '../../common/enums/user-status.enum';
 
 @Injectable()
 export class AuthService {
@@ -46,13 +47,19 @@ export class AuthService {
     const { password } = loginDto;
 
     const user = await this.usersService.findUserByEmailOrNull(normalizedEmail);
+
     if (!user) {
       throw new UnauthorizedException('Email or password is incorrect');
     }
 
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+
     if (!isValidPassword) {
       throw new UnauthorizedException('Email or password is incorrect');
+    }
+
+    if (user.status === UserStatus.LOCKED) {
+      throw new UnauthorizedException('Account is locked');
     }
 
     const tokens = await this.generateTokens(user.id, user.email);
@@ -80,6 +87,11 @@ export class AuthService {
     if (!user || !user.refreshToken) {
       throw new UnauthorizedException('Access Denied');
     }
+
+    if (user.status === UserStatus.LOCKED) {
+      throw new UnauthorizedException('Account is locked');
+    }
+
     const isRefreshTokenValid = await bcrypt.compare(
       refreshToken,
       user.refreshToken,

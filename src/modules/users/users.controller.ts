@@ -83,6 +83,28 @@ export class UsersController {
     return this.usersService.findAllUsers(paginationDto);
   }
 
+  // lock user account
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/lock')
+  @HttpCode(HttpStatus.OK)
+  async lockUser(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<UserResponseDto> {
+    return this.usersService.lockUser(id);
+  }
+
+  // Unlock user account
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/unlock')
+  @HttpCode(HttpStatus.OK)
+  async unlockUser(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<UserResponseDto> {
+    return this.usersService.unlockUser(id);
+  }
+
   // find user by id
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
