@@ -9,7 +9,12 @@ Tích hợp MoMo để hỗ trợ thanh toán đơn hàng trong hệ thống
 ## 3. Environment Variables
 
 ```env
-
+MOMO_PARTNER_CODE=
+MOMO_ACCESS_KEY=
+MOMO_SECRET_KEY=
+MOMO_REDIRECT_URL=
+MOMO_IPN_URL=
+MOMO_REQUEST_TIMEOUT_MS=
 ```
 
 ## 4. API
