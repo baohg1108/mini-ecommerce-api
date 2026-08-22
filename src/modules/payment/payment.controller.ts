@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   HttpCode,
   HttpStatus,
   Logger,
@@ -10,6 +11,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -19,6 +21,8 @@ import { Repository } from 'typeorm';
 import { Order } from '../orders/entities/order.entity';
 import { PaymentService } from './payment.service';
 import { VnpayService } from './vnpay/vnpay.service';
+import { VnpayIpnDto } from './vnpay/dtos/vnpay-ipn.dto';
+import { VnpayIpnResponseDto } from './vnpay/dtos/vnpay-ipn.response.dto';
 import { MomoService } from './momo/momo.service';
 import { MomoPaymentResponseDto } from './momo/dtos/momo-payment-response.dto';
 import { MomoIpnDto } from './momo/dtos/momo-ipn.dto';
@@ -118,7 +122,6 @@ export class PaymentController {
     });
   }
 
-  // Momo IPN callback (server-to-server, không cần auth)
   @IsPublic()
   @Post('momo/ipn')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -159,5 +162,103 @@ export class PaymentController {
         rawCallbackPayload: { ...body },
       });
     }
+  }
+
+  @IsPublic()
+  @Get('vnpay/ipn')
+  @HttpCode(HttpStatus.OK)
+  async handleVnpayIpn(
+    @Query() query: VnpayIpnDto,
+    @Req() req: Request,
+  ): Promise<VnpayIpnResponseDto> {
+    const rawQuery = req.query as Record<string, string | undefined>;
+
+    const requiredFields = [
+      'vnp_TxnRef',
+      'vnp_Amount',
+      'vnp_ResponseCode',
+      'vnp_TransactionStatus',
+      'vnp_SecureHash',
+    ];
+    const missingField = requiredFields.find((field) => !rawQuery[field]);
+    if (missingField) {
+      this.logger.warn(`VNPay IPN missing required field: ${missingField}`);
+      return new VnpayIpnResponseDto('99', 'Missing required parameters');
+    }
+
+    let isValidSignature: boolean;
+    try {
+      isValidSignature = this.vnpayService.verifyIpnSignature(rawQuery);
+    } catch (err) {
+      this.logger.error(
+        `VNPay IPN signature verification threw for txnRef=${query.vnp_TxnRef}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      return new VnpayIpnResponseDto('99', 'Unknown error');
+    }
+
+    if (!isValidSignature) {
+      this.logger.warn(
+        `Rejected VNPay IPN with invalid signature for txnRef=${query.vnp_TxnRef}`,
+      );
+      return new VnpayIpnResponseDto('97', 'Invalid signature');
+    }
+
+    const order = await this.vnpayService.findOrderForIpn(query.vnp_TxnRef);
+
+    if (!order || !order.payment) {
+      this.logger.warn(
+        `VNPay IPN for unknown order, txnRef=${query.vnp_TxnRef}`,
+      );
+      return new VnpayIpnResponseDto('01', 'Order not found');
+    }
+
+    const payment = order.payment;
+
+    const expectedAmount = Math.round(Number(order.totalAmount) * 100);
+    const receivedAmount = Number(query.vnp_Amount);
+    if (!Number.isFinite(receivedAmount) || expectedAmount !== receivedAmount) {
+      this.logger.warn(
+        `VNPay IPN amount mismatch for txnRef=${query.vnp_TxnRef}: ` +
+          `expected=${expectedAmount} received=${query.vnp_Amount}`,
+      );
+      return new VnpayIpnResponseDto('04', 'Invalid amount');
+    }
+
+    if (payment.status !== PaymentStatus.PENDING) {
+      this.logger.log(
+        `VNPay IPN duplicate for txnRef=${query.vnp_TxnRef}, ` +
+          `payment already ${payment.status}`,
+      );
+      return new VnpayIpnResponseDto('02', 'Order already confirmed');
+    }
+
+    const isSuccess =
+      query.vnp_ResponseCode === '00' && query.vnp_TransactionStatus === '00';
+
+    if (isSuccess) {
+      await this.paymentService.markSuccessByOrderId(payment.orderId, {
+        gatewayTxnId: query.vnp_TransactionNo,
+        gatewayResponseCode: query.vnp_ResponseCode,
+        gatewaySignature: query.vnp_SecureHash,
+        rawCallbackPayload: { ...rawQuery },
+      });
+      this.logger.log(
+        `VNPay IPN: payment success for order ${payment.orderId}, ` +
+          `txnRef=${query.vnp_TxnRef}`,
+      );
+    } else {
+      await this.paymentService.markFailedByOrderId(payment.orderId, {
+        gatewayResponseCode: query.vnp_ResponseCode,
+        gatewaySignature: query.vnp_SecureHash,
+        rawCallbackPayload: { ...rawQuery },
+      });
+      this.logger.log(
+        `VNPay IPN: payment failed for order ${payment.orderId}, ` +
+          `txnRef=${query.vnp_TxnRef}, responseCode=${query.vnp_ResponseCode}`,
+      );
+    }
+
+    return new VnpayIpnResponseDto('00', 'Confirm Success');
   }
 }

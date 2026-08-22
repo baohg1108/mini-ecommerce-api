@@ -146,6 +146,33 @@ export class PaymentService {
     return saved;
   }
 
+  async markSuccessByOrderId(
+    orderId: string,
+    data: {
+      gatewayTxnId?: string;
+      gatewayResponseCode?: string;
+      gatewaySignature?: string;
+      rawCallbackPayload?: Record<string, unknown>;
+    },
+  ): Promise<Payment> {
+    return this.dataSource.transaction(async (manager) => {
+      return this.markSuccess(manager, orderId, data);
+    });
+  }
+
+  async markFailedByOrderId(
+    orderId: string,
+    data?: {
+      gatewayResponseCode?: string;
+      gatewaySignature?: string;
+      rawCallbackPayload?: Record<string, unknown>;
+    },
+  ): Promise<Payment> {
+    return this.dataSource.transaction(async (manager) => {
+      return this.markFailed(manager, orderId, data);
+    });
+  }
+
   async markSuccessByGatewayOrderId(
     gatewayOrderId: string,
     data: {
