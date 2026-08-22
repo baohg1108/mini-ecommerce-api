@@ -12,6 +12,7 @@ import { PaymentMethod } from '../../../common/enums/payment-method.enum';
 import {
   buildSignedQuery,
   formatVnpDate,
+  verifySignedQuery,
 } from '../../../common/utils/vnpay-sign.util';
 
 @Injectable()
@@ -74,5 +75,24 @@ export class VnpayService {
     const { queryString } = buildSignedQuery(params, hashSecret);
 
     return { paymentUrl: `${vnpayUrl}?${queryString}` };
+  }
+
+  verifyIpnSignature(query: Record<string, string | undefined>): boolean {
+    const hashSecret = this.configService.get<string>('VNPAY_HASH_SECRET');
+
+    if (!hashSecret) {
+      return false;
+    }
+
+    return verifySignedQuery(query, hashSecret);
+  }
+
+  async findOrderForIpn(orderCode: string): Promise<Order | null> {
+    if (!orderCode) return null;
+
+    return this.orderRepository.findOne({
+      where: { orderCode },
+      relations: { payment: true },
+    });
   }
 }

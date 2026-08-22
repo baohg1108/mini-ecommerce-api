@@ -1,7 +1,5 @@
 import * as crypto from 'crypto';
 
-// VNPay yêu cầu format yyyyMMddHHmmss theo giờ Việt Nam (UTC+7),
-// tính thủ công để không phụ thuộc timezone của server
 export function formatVnpDate(date: Date): string {
   const vnDate = new Date(date.getTime() + 7 * 60 * 60 * 1000);
   const pad = (n: number) => n.toString().padStart(2, '0');
@@ -27,8 +25,6 @@ function sortObject(
   return sorted;
 }
 
-// Sort tham số theo alphabet, build query string, ký HMAC-SHA512 theo đúng
-// spec VNPay: encodeURIComponent rồi thay %20 -> '+' (chuẩn application/x-www-form-urlencoded)
 export function buildSignedQuery(
   params: Record<string, string | number>,
   hashSecret: string,
@@ -51,4 +47,47 @@ export function buildSignedQuery(
     queryString: `${signData}&vnp_SecureHash=${secureHash}`,
     secureHash,
   };
+}
+
+export function verifySignedQuery(
+  query: Record<string, string | undefined>,
+  hashSecret: string,
+): boolean {
+  const receivedHash = query.vnp_SecureHash;
+
+  if (!receivedHash || typeof receivedHash !== 'string') {
+    return false;
+  }
+
+  const { vnp_SecureHash, vnp_SecureHashType, ...rest } = query;
+
+  const params: Record<string, string | number> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    // Bỏ qua field rỗng/undefined, VNPay không đưa field rỗng vào signData
+    if (value === undefined || value === null || value === '') continue;
+    params[key] = value;
+  }
+
+  const sorted = sortObject(params);
+
+  const signData = Object.entries(sorted)
+    .map(
+      ([key, value]) =>
+        `${key}=${encodeURIComponent(value).replace(/%20/g, '+')}`,
+    )
+    .join('&');
+
+  const computedHash = crypto
+    .createHmac('sha512', hashSecret)
+    .update(Buffer.from(signData, 'utf-8'))
+    .digest('hex');
+
+  const computedBuf = Buffer.from(computedHash, 'utf-8');
+  const receivedBuf = Buffer.from(receivedHash, 'utf-8');
+
+  if (computedBuf.length !== receivedBuf.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(computedBuf, receivedBuf);
 }
