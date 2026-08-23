@@ -9,6 +9,8 @@ import { SellerOrdersController } from './seller-orders.controller';
 import { PaymentModule } from '../payment/payment.module';
 import { CartModule } from '../cart/cart.module';
 import { UsersModule } from '../users/users.module';
+import { ProductVariantModule } from '../product-variant/product-variant.module';
+import { OrdersCleanupScheduler } from './orders-cleanup.scheduler';
 
 @Module({
   imports: [
@@ -16,7 +18,10 @@ import { UsersModule } from '../users/users.module';
     PaymentModule,
     CartModule,
     UsersModule,
+    ProductVariantModule,
   ],
+  controllers: [OrdersController],
+  providers: [OrdersService, OrdersCleanupScheduler],
   controllers: [OrdersController, SellerOrdersController],
   providers: [OrdersService],
   exports: [OrdersService],

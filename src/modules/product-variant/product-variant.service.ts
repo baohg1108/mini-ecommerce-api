@@ -1,10 +1,11 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { ProductVariant } from './entities/product-variant.entity';
 import { Product } from '../products/entities/product.entity';
 import { CreateProductVariantDto } from './dtos/create-product-variant.dto';
@@ -246,5 +247,54 @@ export class ProductVariantService {
     });
 
     return variants;
+  }
+
+  async commitStock(
+    manager: EntityManager,
+    variantId: string,
+    quantity: number,
+  ): Promise<void> {
+    const variant = await manager
+      .createQueryBuilder(ProductVariant, 'variant')
+      .where('variant.id = :id', { id: variantId })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (!variant) {
+      throw new NotFoundException(`Variant ${variantId} not found`);
+    }
+
+    if (variant.stockQty < quantity || variant.reservedQty < quantity) {
+      throw new BadRequestException(
+        `Stock inconsistency for variant ${variantId}`,
+      );
+    }
+
+    variant.stockQty -= quantity;
+    variant.reservedQty -= quantity;
+
+    await manager.save(ProductVariant, variant);
+  }
+
+  /**
+   * Giải phóng reservedQty khi đơn bị huỷ / thanh toán thất bại / hết hạn.
+   * KHÔNG đụng stockQty vì hàng chưa từng bị trừ thật lúc checkout
+   * (checkout chỉ tăng reservedQty, xem OrdersService.createOrderForShop).
+   */
+  async releaseReservedStock(
+    manager: EntityManager,
+    variantId: string,
+    quantity: number,
+  ): Promise<void> {
+    const variant = await manager
+      .createQueryBuilder(ProductVariant, 'variant')
+      .where('variant.id = :id', { id: variantId })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (!variant) return; // variant có thể đã bị xoá, bỏ qua thay vì throw
+
+    variant.reservedQty = Math.max(0, variant.reservedQty - quantity);
+    await manager.save(ProductVariant, variant);
   }
 }

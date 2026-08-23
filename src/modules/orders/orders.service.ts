@@ -25,6 +25,8 @@ import { CartService } from '../cart/cart.service';
 import { CartItem } from '../cart/entities/cart-item.entity';
 import { Cart } from '../cart/entities/cart.entity';
 import { ProductVariant } from '../product-variant/entities/product-variant.entity';
+import { ProductVariantService } from '../product-variant/product-variant.service';
+import { Shop } from '../shops/entities/shop.entity';
 import { GroupedCartDto } from '../cart/dtos/grouped-cart.dto';
 import { OrderStatus } from '../../common/enums/order-status.enum';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
@@ -41,6 +43,7 @@ export class OrdersService {
     private readonly cartService: CartService,
     private readonly paymentService: PaymentService,
     private readonly dataSource: DataSource,
+    private readonly productVariantService: ProductVariantService,
   ) {}
 
   async checkout(
@@ -108,7 +111,11 @@ export class OrdersService {
     let subtotal = 0;
     const orderItemsData: Partial<OrderItem>[] = [];
 
-    for (const cartItem of group.items) {
+    const sortedItems = [...group.items].sort((a, b) =>
+      a.variantId.localeCompare(b.variantId),
+    );
+
+    for (const cartItem of sortedItems) {
       const variant = await manager
         .createQueryBuilder(ProductVariant, 'variant')
         .where('variant.id = :id', { id: cartItem.variantId })
@@ -181,6 +188,65 @@ export class OrdersService {
     );
 
     return savedOrder;
+  }
+
+  /**
+   * FR-xx: Seller xác nhận đơn COD.
+   * - Chỉ chủ shop của đơn mới được xác nhận.
+   * - Chỉ áp dụng cho đơn COD đang ở trạng thái PENDING_CONFIRMATION.
+   * - Trừ tồn kho thật (stockQty) tương ứng với reservedQty đã giữ lúc checkout.
+   */
+  async confirmCodOrder(
+    orderId: string,
+    sellerUserId: string,
+  ): Promise<OrderResponseDto> {
+    return this.dataSource.transaction(async (manager) => {
+      const order = await manager.findOne(Order, {
+        where: { id: orderId },
+        relations: { items: true, payment: true },
+      });
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      const shop = await manager.findOne(Shop, {
+        where: { id: order.shopId },
+      });
+
+      if (!shop || shop.userId !== sellerUserId) {
+        throw new ForbiddenException(
+          'You are not allowed to confirm this order',
+        );
+      }
+
+      if (order.paymentMethod !== PaymentMethod.COD) {
+        throw new BadRequestException(
+          'Only COD orders can be confirmed via this action',
+        );
+      }
+
+      if (order.status !== OrderStatus.PENDING_CONFIRMATION) {
+        throw new BadRequestException(
+          `Order is not pending confirmation (current status: ${order.status})`,
+        );
+      }
+
+      for (const item of order.items) {
+        await this.productVariantService.commitStock(
+          manager,
+          item.variantId,
+          item.quantity,
+        );
+      }
+
+      order.status = OrderStatus.CONFIRMED;
+      order.confirmedAt = new Date();
+
+      const saved = await manager.save(Order, order);
+
+      return this.toOrderResponse(saved);
+    });
   }
 
   async findById(id: string, userId: string): Promise<OrderResponseDto> {

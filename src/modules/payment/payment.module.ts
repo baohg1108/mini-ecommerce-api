@@ -7,9 +7,14 @@ import { PaymentController } from './payment.controller';
 import { VnpayService } from './vnpay/vnpay.service';
 import { MomoService } from './momo/momo.service';
 import { UsersModule } from '../users/users.module';
+import { ProductVariantModule } from '../product-variant/product-variant.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Payment, Order]), UsersModule],
+  imports: [
+    TypeOrmModule.forFeature([Payment, Order]),
+    UsersModule,
+    ProductVariantModule,
+  ],
   controllers: [PaymentController],
   providers: [PaymentService, VnpayService, MomoService],
   exports: [PaymentService],
