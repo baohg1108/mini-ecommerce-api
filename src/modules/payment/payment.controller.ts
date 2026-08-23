@@ -34,6 +34,8 @@ import { Roles } from '../../common/decorators/role.decorator';
 import { IsPublic } from '../../common/decorators/public.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
+import { PaymentHistoryQueryDto } from './dtos/payment-history-query.dto';
+import { PaymentHistoryResponseDto } from './dtos/payment-history.response';
 
 @Controller('payments')
 export class PaymentController {
@@ -46,6 +48,18 @@ export class PaymentController {
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
   ) {}
+
+  // BE-083: customer see payment history
+  @Get('history')
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER)
+  @HttpCode(HttpStatus.OK)
+  async getPaymentHistory(
+    @CurrentUserId() userId: string,
+    @Query() query: PaymentHistoryQueryDto,
+  ): Promise<PaymentHistoryResponseDto> {
+    return this.paymentService.getPaymentHistory(userId, query);
+  }
 
   // FR-25: sinh URL thanh toán VNPay
   @Post(':orderId/vnpay')

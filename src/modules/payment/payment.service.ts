@@ -6,6 +6,12 @@ import { Order } from '../orders/entities/order.entity';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { OrderStatus } from '../../common/enums/order-status.enum';
+import { PaymentHistoryQueryDto } from './dtos/payment-history-query.dto';
+import {
+  PaymentHistoryItemDto,
+  PaymentHistoryMetaDto,
+  PaymentHistoryResponseDto,
+} from './dtos/payment-history.response';
 
 @Injectable()
 export class PaymentService {
@@ -206,5 +212,39 @@ export class PaymentService {
       if (!payment) return null;
       return this.markFailed(manager, payment.orderId, data);
     });
+  }
+
+  async getPaymentHistory(
+    userId: string,
+    query: PaymentHistoryQueryDto,
+  ): Promise<PaymentHistoryResponseDto> {
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit = query.limit && query.limit > 0 ? query.limit : 10;
+
+    const qb = this.paymentRepository
+      .createQueryBuilder('payment')
+      .innerJoin('payment.order', 'order')
+      .where('order.user_id = :userId', { userId });
+
+    if (query.status) {
+      qb.andWhere('payment.status = :status', { status: query.status });
+    }
+
+    qb.orderBy('payment.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [payments, totalItems] = await qb.getManyAndCount();
+
+    const items = payments.map((payment) => new PaymentHistoryItemDto(payment));
+
+    const meta: PaymentHistoryMetaDto = {
+      page,
+      limit,
+      totalItems,
+      totalPages: totalItems === 0 ? 0 : Math.ceil(totalItems / limit),
+    };
+
+    return new PaymentHistoryResponseDto(items, meta);
   }
 }
