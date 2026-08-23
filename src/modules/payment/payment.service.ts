@@ -3,9 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Payment } from './entities/payment.entity';
 import { Order } from '../orders/entities/order.entity';
+import { OrderItem } from '../orders/entities/order-item.entity';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { OrderStatus } from '../../common/enums/order-status.enum';
+import { ProductVariantService } from '../product-variant/product-variant.service';
 
 @Injectable()
 export class PaymentService {
@@ -13,6 +15,7 @@ export class PaymentService {
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
     private readonly dataSource: DataSource,
+    private readonly productVariantService: ProductVariantService,
   ) {}
 
   async createForOrder(
@@ -109,6 +112,17 @@ export class PaymentService {
       { status: OrderStatus.PAID_PENDING_CONFIRMATION },
     );
 
+    // Thanh toán đã thành công -> trừ tồn kho thật (stockQty) và giải phóng
+    // phần đã reserve tương ứng cho từng item của đơn hàng.
+    const orderItems = await manager.find(OrderItem, { where: { orderId } });
+    for (const item of orderItems) {
+      await this.productVariantService.commitStock(
+        manager,
+        item.variantId,
+        item.quantity,
+      );
+    }
+
     return saved;
   }
 
@@ -142,6 +156,17 @@ export class PaymentService {
       { id: orderId },
       { status: OrderStatus.PAYMENT_FAILED },
     );
+
+    // Thanh toán thất bại -> giải phóng phần đã reserve, KHÔNG đụng stockQty
+    // vì hàng chưa từng bị trừ thật lúc checkout.
+    const orderItems = await manager.find(OrderItem, { where: { orderId } });
+    for (const item of orderItems) {
+      await this.productVariantService.releaseReservedStock(
+        manager,
+        item.variantId,
+        item.quantity,
+      );
+    }
 
     return saved;
   }
