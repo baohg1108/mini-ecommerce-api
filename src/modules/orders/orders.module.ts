@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
+import { Shop } from '../shops/entities/shop.entity';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
+import { SellerOrdersController } from './seller-orders.controller';
 import { PaymentModule } from '../payment/payment.module';
 import { CartModule } from '../cart/cart.module';
 import { UsersModule } from '../users/users.module';
@@ -12,7 +14,7 @@ import { OrdersCleanupScheduler } from './orders-cleanup.scheduler';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, OrderItem]),
+    TypeOrmModule.forFeature([Order, OrderItem, Shop]),
     PaymentModule,
     CartModule,
     UsersModule,
@@ -20,6 +22,8 @@ import { OrdersCleanupScheduler } from './orders-cleanup.scheduler';
   ],
   controllers: [OrdersController],
   providers: [OrdersService, OrdersCleanupScheduler],
+  controllers: [OrdersController, SellerOrdersController],
+  providers: [OrdersService],
   exports: [OrdersService],
 })
 export class OrdersModule {}
