@@ -59,16 +59,19 @@ export function verifySignedQuery(
     return false;
   }
 
-  const { vnp_SecureHash, vnp_SecureHashType, ...rest } = query;
+  const params = { ...query };
 
-  const params: Record<string, string | number> = {};
-  for (const [key, value] of Object.entries(rest)) {
-    // Bỏ qua field rỗng/undefined, VNPay không đưa field rỗng vào signData
+  delete params.vnp_SecureHash;
+  delete params.vnp_SecureHashType;
+
+  const filteredParams: Record<string, string | number> = {};
+
+  for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null || value === '') continue;
-    params[key] = value;
+    filteredParams[key] = value;
   }
 
-  const sorted = sortObject(params);
+  const sorted = sortObject(filteredParams);
 
   const signData = Object.entries(sorted)
     .map(

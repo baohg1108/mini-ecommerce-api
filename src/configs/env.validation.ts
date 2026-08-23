@@ -46,7 +46,6 @@ export const envSchema = z.object({
     .max(255)
     .default('7d'),
 
-
   // VNPay configuration
   VNPAY_TMN_CODE: z.string().trim().min(1),
   VNPAY_HASH_SECRET: z.string().trim().min(1),
