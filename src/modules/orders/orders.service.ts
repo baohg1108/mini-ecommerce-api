@@ -26,7 +26,6 @@ import { CartItem } from '../cart/entities/cart-item.entity';
 import { Cart } from '../cart/entities/cart.entity';
 import { ProductVariant } from '../product-variant/entities/product-variant.entity';
 import { ProductVariantService } from '../product-variant/product-variant.service';
-import { Shop } from '../shops/entities/shop.entity';
 import { GroupedCartDto } from '../cart/dtos/grouped-cart.dto';
 import { OrderStatus } from '../../common/enums/order-status.enum';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
