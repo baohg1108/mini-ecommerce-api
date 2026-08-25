@@ -20,6 +20,7 @@ import { ProductVariantModule } from './modules/product-variant/product-variant.
 import { CartModule } from './modules/cart/cart.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentModule } from './modules/payment/payment.module';
+import { RefundRequestsModule } from './modules/refund-requests/refund-requests.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { PaymentModule } from './modules/payment/payment.module';
     CartModule,
     OrdersModule,
     PaymentModule,
+    RefundRequestsModule,
   ],
   controllers: [ProductImageController],
   providers: [
