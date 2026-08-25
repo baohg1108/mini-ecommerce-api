@@ -12,6 +12,7 @@ import {
 import { Product } from '../../products/entities/product.entity';
 
 @Entity('product_variants')
+@Index('ix_product_variants_product', ['productId'])
 @Check(`"price" >= 0`)
 @Check(`"stock_qty" >= 0`)
 @Check(`"reserved_qty" >= 0`)

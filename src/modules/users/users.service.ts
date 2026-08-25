@@ -19,6 +19,7 @@ import {
   getOffset,
 } from './../../common/utils/pagination.util';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { UserStatus } from '../../common/enums/user-status.enum';
 
 @Injectable()
 export class UsersService {
@@ -187,6 +188,49 @@ export class UsersService {
     }
 
     user.role = UserRole.SELLER;
+    const updatedUser = await this.userRepository.save(user);
+
+    return plainToInstance(UserResponseDto, updatedUser, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  // FR-09 / FR-36: khoá tài khoản (Customer/Seller) — đồng thời revoke refresh token (NFR 6.2)
+  async lockUser(id: string): Promise<UserResponseDto> {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    if (!user) {
+      throw new NotFoundException(`User with id ${id} not found`);
+    }
+
+    if (user.status === UserStatus.LOCKED) {
+      throw new ConflictException(`User with id ${id} is already locked`);
+    }
+
+    user.status = UserStatus.LOCKED;
+    // NFR 6.2: vô hiệu hoá refresh token ngay, chặn cấp access token mới
+    user.refreshToken = null;
+
+    const updatedUser = await this.userRepository.save(user);
+
+    return plainToInstance(UserResponseDto, updatedUser, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  // FR-09 / FR-36: mở khoá tài khoản
+  async unlockUser(id: string): Promise<UserResponseDto> {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    if (!user) {
+      throw new NotFoundException(`User with id ${id} not found`);
+    }
+
+    if (user.status !== UserStatus.LOCKED) {
+      throw new ConflictException(`User with id ${id} is not locked`);
+    }
+
+    user.status = UserStatus.ACTIVE;
     const updatedUser = await this.userRepository.save(user);
 
     return plainToInstance(UserResponseDto, updatedUser, {

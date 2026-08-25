@@ -5,10 +5,12 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 import { Product } from './product.entity';
 
 @Entity('product_images')
+@Index('ix_product_images_product', ['productId'])
 export class ProductImage {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
