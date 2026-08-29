@@ -55,6 +55,8 @@ describe('PaymentService', () => {
     commitStock: jest.Mock;
     releaseReservedStock: jest.Mock;
   };
+  let vnpayService: { refund: jest.Mock };
+  let momoService: { refund: jest.Mock };
 
   beforeEach(async () => {
     paymentRepository = {
@@ -70,12 +72,17 @@ describe('PaymentService', () => {
       releaseReservedStock: jest.fn(),
     };
 
+    vnpayService = { refund: jest.fn() };
+    momoService = { refund: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentService,
         { provide: getRepositoryToken(Payment), useValue: paymentRepository },
         { provide: DataSource, useValue: dataSource },
         { provide: ProductVariantService, useValue: productVariantService },
+        { provide: VnpayService, useValue: vnpayService },
+        { provide: MomoService, useValue: momoService },
       ],
     }).compile();
 

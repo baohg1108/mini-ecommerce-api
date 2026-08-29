@@ -137,8 +137,6 @@ export class PaymentService {
       { status: OrderStatus.PAID_PENDING_CONFIRMATION },
     );
 
-    // Thanh toán đã thành công -> trừ tồn kho thật (stockQty) và giải phóng
-    // phần đã reserve tương ứng cho từng item của đơn hàng.
     const orderItems = await manager.find(OrderItem, { where: { orderId } });
     for (const item of orderItems) {
       await this.productVariantService.commitStock(
@@ -182,8 +180,6 @@ export class PaymentService {
       { status: OrderStatus.PAYMENT_FAILED },
     );
 
-    // Thanh toán thất bại -> giải phóng phần đã reserve, KHÔNG đụng stockQty
-    // vì hàng chưa từng bị trừ thật lúc checkout.
     const orderItems = await manager.find(OrderItem, { where: { orderId } });
     for (const item of orderItems) {
       await this.productVariantService.releaseReservedStock(
@@ -258,16 +254,6 @@ export class PaymentService {
     });
   }
 
-  /**
-   * FR-46 - Gọi API refund của cổng thanh toán gốc (VNPay/Momo) cho đơn
-   * thanh toán online đã ở trạng thái SUCCESS.
-   *
-   * - Idempotent: nếu Payment đã REFUNDED rồi thì trả về luôn payment hiện
-   *   tại, không gọi lại gateway.
-   * - Không throw ra ngoài khi gateway trả lỗi hoặc mất kết nối - lỗi được
-   *   log lại, Order/Payment giữ nguyên trạng thái để retry hoặc xử lý
-   *   thủ công (đúng theo AC "Refund thất bại" của FR-46).
-   */
   async refundByOrderId(orderId: string, reason: string): Promise<Payment> {
     const payment = await this.paymentRepository.findOne({
       where: { orderId },
@@ -338,9 +324,6 @@ export class PaymentService {
         this.logger.warn(
           `Refund failed for order ${orderId}: ${result.message ?? 'unknown error'}`,
         );
-        // Order.status giữ nguyên REFUND_REQUESTED (đặt trước đó bởi
-        // RefundRequestsService.approve) để retry qua endpoint
-        // PATCH /refund-requests/:id/retry-refund hoặc xử lý thủ công.
       }
 
       return manager.save(Payment, payment);
