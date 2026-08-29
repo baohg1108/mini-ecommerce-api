@@ -1,16 +1,20 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { RefundRequestsService } from './refund-requests.service';
 import { RejectRefundRequestDto } from './dtos/reject-refund-request.dto';
 import { RefundRequestResponseDto } from './dtos/refund-request.response.dto';
+import { RefundRequestListQueryDto } from './dtos/refund-request-list-query.dto';
+import { RefundRequestListResponseDto } from './dtos/refund-request-list.response.dto';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { RolesGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/role.decorator';
@@ -22,6 +26,16 @@ import { CurrentUserId } from '../../common/decorators/current-user-id.decorator
 @Roles(UserRole.SELLER, UserRole.ADMIN)
 export class RefundReviewController {
   constructor(private readonly refundRequestsService: RefundRequestsService) {}
+
+  @Get()
+  @Roles(UserRole.SELLER)
+  @HttpCode(HttpStatus.OK)
+  findForSeller(
+    @CurrentUserId() sellerId: string,
+    @Query() query: RefundRequestListQueryDto,
+  ): Promise<RefundRequestListResponseDto> {
+    return this.refundRequestsService.findForSeller(sellerId, query);
+  }
 
   @Patch(':id/approve')
   @HttpCode(HttpStatus.OK)
