@@ -29,6 +29,19 @@ export interface GatewayRefundResult {
   raw?: Record<string, unknown>;
 }
 
+/**
+ * Ép kiểu an toàn cho các field lấy từ response JSON (kiểu `unknown`) sang
+ * string, tránh lỗi @typescript-eslint/no-base-to-string khi dùng String()
+ * trực tiếp trên giá trị có thể là object.
+ */
+function toSafeString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '';
+}
+
 @Injectable()
 export class VnpayService {
   private readonly logger = new Logger(VnpayService.name);
@@ -210,26 +223,26 @@ export class VnpayService {
       };
     }
 
-    const responseCode = String(data.vnp_ResponseCode ?? '');
-    const transactionStatus = String(data.vnp_TransactionStatus ?? '');
-    const receivedHash = String(data.vnp_SecureHash ?? '');
+    const responseCode = toSafeString(data.vnp_ResponseCode);
+    const transactionStatus = toSafeString(data.vnp_TransactionStatus);
+    const receivedHash = toSafeString(data.vnp_SecureHash);
 
     if (receivedHash) {
       const validSignature = verifyRefundResponseSignature(
         {
-          responseId: String(data.vnp_ResponseId ?? ''),
-          command: String(data.vnp_Command ?? ''),
+          responseId: toSafeString(data.vnp_ResponseId),
+          command: toSafeString(data.vnp_Command),
           responseCode,
-          message: String(data.vnp_Message ?? ''),
-          tmnCode: String(data.vnp_TmnCode ?? ''),
-          txnRef: String(data.vnp_TxnRef ?? ''),
-          amount: String(data.vnp_Amount ?? ''),
-          bankCode: String(data.vnp_BankCode ?? ''),
-          payDate: String(data.vnp_PayDate ?? ''),
-          transactionNo: String(data.vnp_TransactionNo ?? ''),
-          transactionType: String(data.vnp_TransactionType ?? ''),
+          message: toSafeString(data.vnp_Message),
+          tmnCode: toSafeString(data.vnp_TmnCode),
+          txnRef: toSafeString(data.vnp_TxnRef),
+          amount: toSafeString(data.vnp_Amount),
+          bankCode: toSafeString(data.vnp_BankCode),
+          payDate: toSafeString(data.vnp_PayDate),
+          transactionNo: toSafeString(data.vnp_TransactionNo),
+          transactionType: toSafeString(data.vnp_TransactionType),
           transactionStatus,
-          orderInfo: String(data.vnp_OrderInfo ?? ''),
+          orderInfo: toSafeString(data.vnp_OrderInfo),
         },
         receivedHash,
         hashSecret,
@@ -250,11 +263,14 @@ export class VnpayService {
 
     const success = responseCode === '00' && transactionStatus === '00';
 
+    const gatewayTxnId = toSafeString(data.vnp_TransactionNo);
+    const message = toSafeString(data.vnp_Message);
+
     return {
       success,
       responseCode,
-      gatewayTxnId: data.vnp_TransactionNo as string | undefined,
-      message: (data.vnp_Message as string | undefined) ?? undefined,
+      gatewayTxnId: gatewayTxnId || undefined,
+      message: message || undefined,
       raw: data,
     };
   }
