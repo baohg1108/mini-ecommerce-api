@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Payment } from './entities/payment.entity';
@@ -8,6 +13,14 @@ import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { OrderStatus } from '../../common/enums/order-status.enum';
 import { ProductVariantService } from '../product-variant/product-variant.service';
+import {
+  VnpayService,
+  GatewayRefundResult as VnpayRefundResult,
+} from './vnpay/vnpay.service';
+import {
+  MomoService,
+  GatewayRefundResult as MomoRefundResult,
+} from './momo/momo.service';
 import { PaymentHistoryQueryDto } from './dtos/payment-history-query.dto';
 import {
   PaymentHistoryItemDto,
@@ -15,13 +28,19 @@ import {
   PaymentHistoryResponseDto,
 } from './dtos/payment-history.response';
 
+type GatewayRefundResult = VnpayRefundResult | MomoRefundResult;
+
 @Injectable()
 export class PaymentService {
+  private readonly logger = new Logger(PaymentService.name);
+
   constructor(
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
     private readonly dataSource: DataSource,
     private readonly productVariantService: ProductVariantService,
+    private readonly vnpayService: VnpayService,
+    private readonly momoService: MomoService,
   ) {}
 
   async createForOrder(
@@ -118,8 +137,6 @@ export class PaymentService {
       { status: OrderStatus.PAID_PENDING_CONFIRMATION },
     );
 
-    // Thanh toán đã thành công -> trừ tồn kho thật (stockQty) và giải phóng
-    // phần đã reserve tương ứng cho từng item của đơn hàng.
     const orderItems = await manager.find(OrderItem, { where: { orderId } });
     for (const item of orderItems) {
       await this.productVariantService.commitStock(
@@ -163,8 +180,6 @@ export class PaymentService {
       { status: OrderStatus.PAYMENT_FAILED },
     );
 
-    // Thanh toán thất bại -> giải phóng phần đã reserve, KHÔNG đụng stockQty
-    // vì hàng chưa từng bị trừ thật lúc checkout.
     const orderItems = await manager.find(OrderItem, { where: { orderId } });
     for (const item of orderItems) {
       await this.productVariantService.releaseReservedStock(
@@ -236,6 +251,82 @@ export class PaymentService {
       });
       if (!payment) return null;
       return this.markFailed(manager, payment.orderId, data);
+    });
+  }
+
+  async refundByOrderId(orderId: string, reason: string): Promise<Payment> {
+    const payment = await this.paymentRepository.findOne({
+      where: { orderId },
+      relations: { order: true },
+    });
+
+    if (!payment) {
+      throw new NotFoundException(`Payment for order ${orderId} not found`);
+    }
+
+    if (payment.status === PaymentStatus.REFUNDED) {
+      return payment;
+    }
+
+    if (payment.status !== PaymentStatus.SUCCESS) {
+      throw new BadRequestException(
+        `Cannot refund a payment that is not in "success" status (current: ${payment.status})`,
+      );
+    }
+
+    if (payment.method === PaymentMethod.VNPAY) {
+      const result = await this.vnpayService.refund(
+        payment.order,
+        payment,
+        reason,
+      );
+      return this.applyRefundResult(orderId, result);
+    }
+
+    if (payment.method === PaymentMethod.MOMO) {
+      const result = await this.momoService.refund(
+        payment.order,
+        payment,
+        reason,
+      );
+      return this.applyRefundResult(orderId, result);
+    }
+
+    throw new BadRequestException(
+      `Refund via payment gateway is not supported for method "${payment.method}"`,
+    );
+  }
+
+  private async applyRefundResult(
+    orderId: string,
+    result: GatewayRefundResult,
+  ): Promise<Payment> {
+    return this.dataSource.transaction(async (manager) => {
+      const payment = await manager.findOne(Payment, { where: { orderId } });
+
+      if (!payment) {
+        throw new NotFoundException(`Payment for order ${orderId} not found`);
+      }
+
+      if (result.responseCode) payment.refundResponseCode = result.responseCode;
+      if (result.gatewayTxnId) payment.refundGatewayTxnId = result.gatewayTxnId;
+      if (result.raw) payment.rawRefundResponsePayload = result.raw;
+
+      if (result.success) {
+        payment.status = PaymentStatus.REFUNDED;
+        payment.refundedAt = new Date();
+        await manager.update(
+          Order,
+          { id: orderId },
+          { status: OrderStatus.REFUNDED },
+        );
+      } else {
+        this.logger.warn(
+          `Refund failed for order ${orderId}: ${result.message ?? 'unknown error'}`,
+        );
+      }
+
+      return manager.save(Payment, payment);
     });
   }
 

@@ -51,6 +51,15 @@ export const envSchema = z.object({
   VNPAY_HASH_SECRET: z.string().trim().min(1),
   VNPAY_PAYMENT_URL: z.string().trim().url(),
   VNPAY_RETURN_URL: z.string().trim().url(),
+  // FR-46 - VNPay Refund API (sandbox)
+  VNPAY_API_URL: z
+    .string()
+    .trim()
+    .url()
+    .default('https://sandbox.vnpayment.vn/merchant_webapi/api/transaction'),
+  VNPAY_CREATE_BY: z.string().trim().min(1).default('system'),
+  VNPAY_REFUND_TIMEOUT_MS: z.coerce.number().int().min(1000).default(15000),
+
   // Momo configuration
   // https://developers.momo.vn/v3/docs/payment/api/wallet/onetime
   MOMO_PARTNER_CODE: z.string().trim().min(1),
@@ -61,6 +70,13 @@ export const envSchema = z.object({
     .trim()
     .url()
     .default('https://test-payment.momo.vn/v2/gateway/api/create'),
+  // FR-46 - Momo Refund API (sandbox)
+  // https://developers.momo.vn/v3/docs/payment/api/wallet/refund
+  MOMO_REFUND_ENDPOINT: z
+    .string()
+    .trim()
+    .url()
+    .default('https://test-payment.momo.vn/v2/gateway/api/refund'),
   MOMO_REDIRECT_URL: z.string().trim().url(),
   MOMO_IPN_URL: z.string().trim().url(),
   MOMO_REQUEST_TYPE: z.string().trim().min(1).default('captureWallet'),

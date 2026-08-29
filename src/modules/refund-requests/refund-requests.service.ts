@@ -1,9 +1,10 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { RefundRequest } from './entities/refund-request.entity';
 import { Order } from '../orders/entities/order.entity';
 import { Shop } from '../shops/entities/shop.entity';
+import { Payment } from '../payment/entities/payment.entity';
 import { CreateRefundRequestDto } from './dtos/create-refund-request.dto';
 import { RejectRefundRequestDto } from './dtos/reject-refund-request.dto';
 import { RefundRequestResponseDto } from './dtos/refund-request.response.dto';
@@ -14,10 +15,13 @@ import {
   RefundRequestListResponseDto,
 } from './dtos/refund-request-list.response.dto';
 import { OrderStatus } from '../../common/enums/order-status.enum';
+import { PaymentMethod } from '../../common/enums/payment-method.enum';
+import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { RefundRequestStatus } from '../../common/enums/refund-request-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { AppException } from '../../common/exceptions/app.exception';
 import { UsersService } from '../users/users.service';
+import { PaymentService } from '../payment/payment.service';
 
 const REFUND_WINDOW_DAYS = 7;
 
@@ -25,6 +29,8 @@ const ELIGIBLE_ORDER_STATUSES = [OrderStatus.DELIVERED, OrderStatus.COMPLETED];
 
 @Injectable()
 export class RefundRequestsService {
+  private readonly logger = new Logger(RefundRequestsService.name);
+
   constructor(
     @InjectRepository(RefundRequest)
     private readonly refundRequestRepository: Repository<RefundRequest>,
@@ -33,6 +39,7 @@ export class RefundRequestsService {
     @InjectRepository(Shop)
     private readonly shopRepository: Repository<Shop>,
     private readonly usersService: UsersService,
+    private readonly paymentService: PaymentService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -118,28 +125,127 @@ export class RefundRequestsService {
     refundRequestId: string,
     currentUserId: string,
   ): Promise<RefundRequestResponseDto> {
-    return this.dataSource.transaction(async (manager) => {
-      const { refundRequest, order } = await this.loadForReview(
-        manager,
-        refundRequestId,
+    const { savedRefundRequest, payment } = await this.dataSource.transaction(
+      async (manager) => {
+        const { refundRequest, order } = await this.loadForReview(
+          manager,
+          refundRequestId,
+        );
+
+        await this.assertCanReview(manager, order, currentUserId);
+
+        refundRequest.status = RefundRequestStatus.APPROVED;
+        refundRequest.reviewedBy = currentUserId;
+        refundRequest.reviewedAt = new Date();
+
+        const savedRefundRequest = await manager.save(
+          RefundRequest,
+          refundRequest,
+        );
+
+        const payment = await manager.findOne(Payment, {
+          where: { orderId: order.id },
+        });
+
+        if (!payment) {
+          throw new AppException(
+            'PAYMENT-404',
+            'Payment record not found for this order',
+            HttpStatus.NOT_FOUND,
+          );
+        }
+
+        if (payment.method === PaymentMethod.COD) {
+          payment.status = PaymentStatus.REFUNDED;
+          payment.refundedAt = new Date();
+          await manager.save(Payment, payment);
+
+          order.status = OrderStatus.REFUNDED;
+          await manager.save(Order, order);
+        } else {
+          order.status = OrderStatus.REFUND_REQUESTED;
+          await manager.save(Order, order);
+        }
+
+        // TODO: integrate Notification Service - notify customer that refund was approved
+
+        return { savedRefundRequest, payment };
+      },
+    );
+
+    if (payment.method !== PaymentMethod.COD) {
+      await this.processGatewayRefund(
+        savedRefundRequest.orderId,
+        savedRefundRequest.reason,
       );
+    }
 
-      await this.assertCanReview(manager, order, currentUserId);
+    return this.toResponse(savedRefundRequest);
+  }
 
-      refundRequest.status = RefundRequestStatus.APPROVED;
-      refundRequest.reviewedBy = currentUserId;
-      refundRequest.reviewedAt = new Date();
-
-      const saved = await manager.save(RefundRequest, refundRequest);
-
-      order.status = OrderStatus.REFUNDED;
-      await manager.save(Order, order);
-
-      // TODO: SCRUM-67 - trigger actual refund processing via payment gateway
-      // TODO: integrate Notification Service - notify customer that refund was approved
-
-      return this.toResponse(saved);
+  async retryRefund(
+    refundRequestId: string,
+    currentUserId: string,
+  ): Promise<RefundRequestResponseDto> {
+    const refundRequest = await this.refundRequestRepository.findOne({
+      where: { id: refundRequestId },
     });
+
+    if (!refundRequest) {
+      throw new AppException(
+        'REFUND-404',
+        'Refund request not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (refundRequest.status !== RefundRequestStatus.APPROVED) {
+      throw new AppException(
+        'REFUND-409',
+        'Only approved refund requests can be retried',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    const order = await this.orderRepository.findOne({
+      where: { id: refundRequest.orderId },
+    });
+
+    if (!order) {
+      throw new AppException(
+        'ORD-404',
+        'Order associated with this refund request was not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    await this.assertCanReview(this.dataSource.manager, order, currentUserId);
+
+    if (order.status === OrderStatus.REFUNDED) {
+      throw new AppException(
+        'REFUND-409',
+        'This order has already been refunded',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    await this.processGatewayRefund(order.id, refundRequest.reason);
+
+    return this.toResponse(refundRequest);
+  }
+
+  private async processGatewayRefund(
+    orderId: string,
+    reason: string,
+  ): Promise<void> {
+    try {
+      await this.paymentService.refundByOrderId(orderId, reason);
+    } catch (error) {
+      this.logger.error(
+        `Refund gateway call failed for order ${orderId}: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+    }
   }
 
   async reject(

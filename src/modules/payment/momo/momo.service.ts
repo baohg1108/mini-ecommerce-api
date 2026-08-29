@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -13,6 +14,15 @@ import {
   MomoCreateApiResponse,
   MomoCreatePaymentResult,
 } from './interfaces/momo-create-response.interface';
+import { MomoRefundApiResponse } from './interfaces/momo-refund-response.interface';
+
+export interface GatewayRefundResult {
+  success: boolean;
+  gatewayTxnId?: string;
+  responseCode?: string;
+  message?: string;
+  raw?: Record<string, unknown>;
+}
 
 @Injectable()
 export class MomoService {
@@ -159,6 +169,104 @@ export class MomoService {
     }
 
     return timingSafeEqual(expected, received);
+  }
+
+  /**
+   * FR-46 - Gọi Momo Refund API (sandbox) để hoàn tiền cho đơn thanh toán
+   * qua Momo. Không throw ra ngoài khi gateway trả lỗi hoặc mất kết nối -
+   * luôn trả về object result để caller (PaymentService) tự quyết định cách
+   * cập nhật trạng thái Order/Payment.
+   * Docs: https://developers.momo.vn/v3/docs/payment/api/wallet/refund
+   */
+  async refund(
+    order: Order,
+    payment: Payment,
+    reason: string,
+  ): Promise<GatewayRefundResult> {
+    const refundEndpoint = this.configService.getOrThrow<string>(
+      'MOMO_REFUND_ENDPOINT',
+    );
+
+    if (!payment.gatewayTxnId) {
+      throw new BadRequestException(
+        'Cannot refund: original Momo transaction id is missing',
+      );
+    }
+
+    const transId = Number(payment.gatewayTxnId);
+
+    if (Number.isNaN(transId)) {
+      throw new BadRequestException('Invalid Momo transaction id for refund');
+    }
+
+    const requestId = randomUUID();
+    const orderId = `${payment.id}-refund-${Date.now()}`;
+    const amount = Math.round(Number(payment.amount));
+    const description = `Hoan tien don hang ${order.orderCode}: ${reason}`;
+
+    const rawSignature =
+      `accessKey=${this.accessKey}` +
+      `&amount=${amount}` +
+      `&description=${description}` +
+      `&orderId=${orderId}` +
+      `&partnerCode=${this.partnerCode}` +
+      `&requestId=${requestId}` +
+      `&transId=${transId}`;
+
+    const signature = this.sign(rawSignature);
+
+    const requestBody = {
+      partnerCode: this.partnerCode,
+      orderId,
+      requestId,
+      amount,
+      transId,
+      lang: 'vi',
+      description,
+      signature,
+    };
+
+    let data: MomoRefundApiResponse;
+
+    try {
+      const response = await axios.post<MomoRefundApiResponse>(
+        refundEndpoint,
+        requestBody,
+        {
+          timeout: this.requestTimeoutMs,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      data = response.data;
+    } catch (error) {
+      const err = error as AxiosError;
+      this.logger.error(
+        `Momo refund request failed for order ${order.orderCode}: ${err.message}`,
+        err.response?.data ? JSON.stringify(err.response.data) : undefined,
+      );
+      return {
+        success: false,
+        message: `Không thể kết nối tới cổng Momo: ${err.message}`,
+      };
+    }
+
+    const success = data.resultCode === 0;
+
+    if (!success) {
+      this.logger.warn(
+        `Momo refund returned an error for order ${order.orderCode}: ` +
+          `resultCode=${data.resultCode} message=${data.message}`,
+      );
+    }
+
+    return {
+      success,
+      responseCode: String(data.resultCode),
+      gatewayTxnId:
+        data.transId !== undefined ? String(data.transId) : undefined,
+      message: data.message,
+      raw: data as unknown as Record<string, unknown>,
+    };
   }
 
   private sign(rawSignature: string): string {
