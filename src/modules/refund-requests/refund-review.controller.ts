@@ -55,4 +55,13 @@ export class RefundReviewController {
   ): Promise<RefundRequestResponseDto> {
     return this.refundRequestsService.reject(id, userId, dto);
   }
+
+  @Patch(':id/retry-refund')
+  @HttpCode(HttpStatus.OK)
+  retryRefund(
+    @CurrentUserId() userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RefundRequestResponseDto> {
+    return this.refundRequestsService.retryRefund(id, userId);
+  }
 }

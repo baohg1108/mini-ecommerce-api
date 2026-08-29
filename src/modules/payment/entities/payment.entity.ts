@@ -71,6 +71,32 @@ export class Payment {
   @Column({ name: 'paid_at', type: 'timestamptz', nullable: true })
   paidAt?: Date;
 
+  @Column({
+    name: 'refund_gateway_txn_id',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  refundGatewayTxnId?: string;
+
+  @Column({
+    name: 'refund_response_code',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  refundResponseCode?: string;
+
+  @Column({
+    name: 'raw_refund_response_payload',
+    type: 'jsonb',
+    nullable: true,
+  })
+  rawRefundResponsePayload?: Record<string, unknown>;
+
+  @Column({ name: 'refunded_at', type: 'timestamptz', nullable: true })
+  refundedAt?: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 
