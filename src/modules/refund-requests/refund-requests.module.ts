@@ -6,6 +6,7 @@ import { Shop } from '../shops/entities/shop.entity';
 import { RefundRequestsService } from './refund-requests.service';
 import { RefundRequestsController } from './refund-requests.controller';
 import { RefundReviewController } from './refund-review.controller';
+import { RefundAdminController } from './refund-admin.controller';
 import { UsersModule } from '../users/users.module';
 
 @Module({
@@ -13,7 +14,11 @@ import { UsersModule } from '../users/users.module';
     TypeOrmModule.forFeature([RefundRequest, Order, Shop]),
     UsersModule,
   ],
-  controllers: [RefundRequestsController, RefundReviewController],
+  controllers: [
+    RefundRequestsController,
+    RefundReviewController,
+    RefundAdminController,
+  ],
   providers: [RefundRequestsService],
   exports: [RefundRequestsService],
 })

@@ -7,6 +7,12 @@ import { Shop } from '../shops/entities/shop.entity';
 import { CreateRefundRequestDto } from './dtos/create-refund-request.dto';
 import { RejectRefundRequestDto } from './dtos/reject-refund-request.dto';
 import { RefundRequestResponseDto } from './dtos/refund-request.response.dto';
+import { RefundRequestListQueryDto } from './dtos/refund-request-list-query.dto';
+import {
+  RefundRequestListItemDto,
+  RefundRequestListMetaDto,
+  RefundRequestListResponseDto,
+} from './dtos/refund-request-list.response.dto';
 import { OrderStatus } from '../../common/enums/order-status.enum';
 import { RefundRequestStatus } from '../../common/enums/refund-request-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -159,6 +165,101 @@ export class RefundRequestsService {
       // TODO: integrate Notification Service - notify customer with rejection reason
 
       return this.toResponse(saved);
+    });
+  }
+
+  async findForSeller(
+    sellerId: string,
+    query: RefundRequestListQueryDto,
+  ): Promise<RefundRequestListResponseDto> {
+    const shop = await this.shopRepository.findOne({
+      where: { userId: sellerId },
+    });
+
+    if (!shop) {
+      throw new AppException(
+        'SHOP-404',
+        'Shop not found for this seller',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    return this.queryList(query, shop.id);
+  }
+
+  async findForAdmin(
+    query: RefundRequestListQueryDto,
+  ): Promise<RefundRequestListResponseDto> {
+    return this.queryList(query, query.shopId);
+  }
+
+  private async queryList(
+    query: RefundRequestListQueryDto,
+    shopId?: string,
+  ): Promise<RefundRequestListResponseDto> {
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit = query.limit && query.limit > 0 ? query.limit : 10;
+
+    const qb = this.refundRequestRepository
+      .createQueryBuilder('rr')
+      .leftJoinAndSelect('rr.order', 'order')
+      .leftJoinAndSelect('order.shop', 'shop')
+      .leftJoinAndSelect('order.user', 'customer');
+
+    if (shopId) {
+      qb.andWhere('order.shop_id = :shopId', { shopId });
+    }
+
+    if (query.status) {
+      qb.andWhere('rr.status = :status', { status: query.status });
+    }
+
+    if (query.fromDate) {
+      qb.andWhere('rr.created_at >= :fromDate', {
+        fromDate: new Date(query.fromDate),
+      });
+    }
+
+    if (query.toDate) {
+      // inclusive of the whole "toDate" day
+      const toDate = new Date(query.toDate);
+      toDate.setHours(23, 59, 59, 999);
+      qb.andWhere('rr.created_at <= :toDate', { toDate });
+    }
+
+    qb.orderBy('rr.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [rows, totalItems] = await qb.getManyAndCount();
+
+    const items = rows.map((row) => this.toListItem(row));
+
+    const meta = new RefundRequestListMetaDto({
+      page,
+      limit,
+      totalItems,
+      totalPages: totalItems === 0 ? 0 : Math.ceil(totalItems / limit),
+    });
+
+    return new RefundRequestListResponseDto(items, meta);
+  }
+
+  private toListItem(entity: RefundRequest): RefundRequestListItemDto {
+    return new RefundRequestListItemDto({
+      id: entity.id,
+      orderId: entity.orderId,
+      orderCode: entity.order?.orderCode,
+      shopId: entity.order?.shopId,
+      shopName: entity.order?.shop?.shopName,
+      customerName: entity.order?.user?.fullName,
+      customerEmail: entity.order?.user?.email,
+      status: entity.status,
+      reason: entity.reason,
+      rejectionReason: entity.rejectionReason,
+      reviewedBy: entity.reviewedBy,
+      reviewedAt: entity.reviewedAt,
+      createdAt: entity.createdAt,
     });
   }
 
