@@ -136,7 +136,7 @@ export class UsersController {
 
   // become to seller
   @UseGuards(AccessTokenGuard, RolesGuard)
-  @Roles(UserRole.CUSTOMER)
+  @Roles(UserRole.CUSTOMER, UserRole.SELLER)
   @Post('become-seller')
   @HttpCode(HttpStatus.OK)
   becomeToSeller(@CurrentUserId() userId: string): Promise<UserResponseDto> {
