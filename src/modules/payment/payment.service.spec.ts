@@ -86,6 +86,21 @@ describe('PaymentService', () => {
     jest.clearAllMocks();
   });
 
+  const createManagerWithQueryBuilder = (
+    paymentResult: Payment | null,
+    extra: Record<string, unknown> = {},
+  ): EntityManager => {
+    const qb = {
+      where: jest.fn().mockReturnThis(),
+      setLock: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(paymentResult),
+    };
+    return {
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+      ...extra,
+    } as unknown as EntityManager;
+  };
+
   describe('createForOrder', () => {
     it('PAY-UNIT-013: throws NotFoundException when order has no id', async () => {
       const manager = {} as EntityManager;
@@ -207,9 +222,7 @@ describe('PaymentService', () => {
 
   describe('markSuccess', () => {
     it('PAY-UNIT-021: throws NotFoundException when payment missing', async () => {
-      const manager = {
-        findOne: jest.fn().mockResolvedValue(null),
-      } as unknown as EntityManager;
+      const manager = createManagerWithQueryBuilder(null);
 
       await expect(service.markSuccess(manager, 'o1', {})).rejects.toThrow(
         NotFoundException,
@@ -227,14 +240,13 @@ describe('PaymentService', () => {
         { variantId: 'v2', quantity: 1 } as OrderItem,
       ];
 
-      const manager = {
-        findOne: jest.fn().mockResolvedValue(payment),
+      const manager = createManagerWithQueryBuilder(payment, {
         save: jest.fn((_entity: unknown, data: Payment) =>
           Promise.resolve(data),
         ),
         update: jest.fn().mockResolvedValue(undefined),
         find: jest.fn().mockResolvedValue(orderItems),
-      } as unknown as EntityManager;
+      });
 
       const result = await service.markSuccess(manager, 'o1', {
         gatewayTxnId: 'tx1',
@@ -270,9 +282,7 @@ describe('PaymentService', () => {
 
   describe('markFailed', () => {
     it('PAY-UNIT-023: throws NotFoundException when payment missing', async () => {
-      const manager = {
-        findOne: jest.fn().mockResolvedValue(null),
-      } as unknown as EntityManager;
+      const manager = createManagerWithQueryBuilder(null);
 
       await expect(service.markFailed(manager, 'o1')).rejects.toThrow(
         NotFoundException,
@@ -287,14 +297,13 @@ describe('PaymentService', () => {
       } as Payment;
       const orderItems = [{ variantId: 'v1', quantity: 3 } as OrderItem];
 
-      const manager = {
-        findOne: jest.fn().mockResolvedValue(payment),
+      const manager = createManagerWithQueryBuilder(payment, {
         save: jest.fn((_entity: unknown, data: Payment) =>
           Promise.resolve(data),
         ),
         update: jest.fn().mockResolvedValue(undefined),
         find: jest.fn().mockResolvedValue(orderItems),
-      } as unknown as EntityManager;
+      });
 
       const result = await service.markFailed(manager, 'o1', {
         gatewayResponseCode: '99',

@@ -297,4 +297,20 @@ export class ProductVariantService {
     variant.reservedQty = Math.max(0, variant.reservedQty - quantity);
     await manager.save(ProductVariant, variant);
   }
+  async restock(
+    manager: EntityManager,
+    variantId: string,
+    quantity: number,
+  ): Promise<void> {
+    const variant = await manager
+      .createQueryBuilder(ProductVariant, 'variant')
+      .where('variant.id = :id', { id: variantId })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (!variant) return; // variant có thể đã bị xoá, bỏ qua thay vì throw
+
+    variant.stockQty += quantity;
+    await manager.save(ProductVariant, variant);
+  }
 }
