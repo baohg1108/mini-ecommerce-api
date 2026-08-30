@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import {
   NotFoundException,
   ConflictException,
@@ -19,6 +20,7 @@ import { CreateProductDto } from './dtos/create-product.dto';
 import { UpdateProductDto } from './dtos/update-product.dto';
 import { ProductSortBy, SearchProductDto } from './dtos/search-product.dto';
 import { ProductListItemDto } from './dtos/public-product-response.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 interface MockQueryBuilder {
   leftJoin: jest.Mock<MockQueryBuilder, any[]>;
@@ -156,6 +158,25 @@ describe('ProductService', () => {
           useValue: {
             extractPublicId: jest.fn(),
             deleteFiles: jest.fn(),
+          },
+        },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn((cb: (manager: any) => Promise<any>) => {
+              const mockManager = {
+                findOne: (_entity: any, options: any) =>
+                  productRepo.findOne(options),
+                save: (_entity: any, data: any) => productRepo.save(data),
+              };
+              return cb(mockManager);
+            }),
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            create: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -531,13 +552,16 @@ describe('ProductService', () => {
   });
 
   describe('findOneProductDetail', () => {
-    it('returns product details when found', async () => {
-      productRepo.findOne.mockResolvedValue({ ...baseProduct });
+    it('returns product details when found and active', async () => {
+      productRepo.findOne.mockResolvedValue({
+        ...baseProduct,
+        status: ProductStatus.ACTIVE,
+      });
 
       const result = await service.findOneProductDetail(baseProduct.id);
 
       expect(productRepo.findOne).toHaveBeenCalledWith({
-        where: { id: baseProduct.id },
+        where: { id: baseProduct.id, status: ProductStatus.ACTIVE },
         relations: { images: true },
       });
       expect(result).toBeDefined();
@@ -551,6 +575,41 @@ describe('ProductService', () => {
         NotFoundException,
       );
     });
+
+    it('product exists but not active (e.g. pending) -> NotFoundException', async () => {
+      // vì query đã lọc status: ACTIVE ngay trong where, TypeORM sẽ trả null
+      // cho sản phẩm pending/rejected/removed -> mock findOne trả null đúng hành vi thật
+      productRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.findOneProductDetail(baseProduct.id),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('findOneForAdmin', () => {
+    it('returns product details regardless of status (e.g. pending)', async () => {
+      productRepo.findOne.mockResolvedValue({
+        ...baseProduct,
+        status: ProductStatus.PENDING,
+      });
+
+      const result = await service.findOneForAdmin(baseProduct.id);
+
+      expect(productRepo.findOne).toHaveBeenCalledWith({
+        where: { id: baseProduct.id },
+        relations: { images: true },
+      });
+      expect(result.id).toBe(baseProduct.id);
+    });
+
+    it('product not found -> NotFoundException', async () => {
+      productRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.findOneForAdmin('not-exist')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
   describe('approve', () => {
@@ -558,15 +617,11 @@ describe('ProductService', () => {
       productRepo.findOne.mockResolvedValue({
         ...baseProduct,
         status: ProductStatus.PENDING,
+        shop: mockShop,
       });
       productRepo.save.mockImplementation((data: Product) =>
         Promise.resolve(data),
       );
-      productRepo.findOneOrFail.mockResolvedValue({
-        ...baseProduct,
-        status: ProductStatus.ACTIVE,
-        approvedBy: 'admin-1',
-      });
 
       const result = await service.approve('admin-1', baseProduct.id);
 
@@ -586,6 +641,7 @@ describe('ProductService', () => {
       productRepo.findOne.mockResolvedValue({
         ...baseProduct,
         status: ProductStatus.ACTIVE,
+        shop: mockShop,
       });
 
       await expect(service.approve('admin-1', baseProduct.id)).rejects.toThrow(
@@ -607,15 +663,11 @@ describe('ProductService', () => {
       productRepo.findOne.mockResolvedValue({
         ...baseProduct,
         status: ProductStatus.PENDING,
+        shop: mockShop,
       });
       productRepo.save.mockImplementation((data: Product) =>
         Promise.resolve(data),
       );
-      productRepo.findOneOrFail.mockResolvedValue({
-        ...baseProduct,
-        status: ProductStatus.REJECTED,
-        rejectionReason: 'Invalid images',
-      });
 
       const result = await service.reject(
         'admin-1',
@@ -639,6 +691,7 @@ describe('ProductService', () => {
       productRepo.findOne.mockResolvedValue({
         ...baseProduct,
         status: ProductStatus.ACTIVE,
+        shop: mockShop,
       });
 
       await expect(
@@ -660,6 +713,7 @@ describe('ProductService', () => {
       productRepo.findOne.mockResolvedValue({
         ...baseProduct,
         status: ProductStatus.ACTIVE,
+        shop: mockShop,
       });
       productRepo.save.mockImplementation((data: Product) =>
         Promise.resolve(data),
@@ -675,6 +729,7 @@ describe('ProductService', () => {
       productRepo.findOne.mockResolvedValue({
         ...baseProduct,
         status: ProductStatus.HIDDEN,
+        shop: mockShop,
       });
       productRepo.save.mockImplementation((data: Product) =>
         Promise.resolve(data),
@@ -692,6 +747,7 @@ describe('ProductService', () => {
       productRepo.findOne.mockResolvedValue({
         ...baseProduct,
         status: ProductStatus.OUT_OF_STOCK,
+        shop: mockShop,
       });
       productRepo.save.mockImplementation((data: Product) =>
         Promise.resolve(data),

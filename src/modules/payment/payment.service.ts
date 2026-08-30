@@ -114,10 +114,17 @@ export class PaymentService {
       rawCallbackPayload?: Record<string, unknown>;
     },
   ): Promise<Payment> {
-    const payment = await manager.findOne(Payment, { where: { orderId } });
+    const payment = await manager
+      .createQueryBuilder(Payment, 'payment')
+      .where('payment.orderId = :orderId', { orderId })
+      .setLock('pessimistic_write')
+      .getOne();
 
     if (!payment) {
       throw new NotFoundException(`Payment for order ${orderId} not found`);
+    }
+    if (payment.status !== PaymentStatus.PENDING) {
+      return payment;
     }
 
     payment.status = PaymentStatus.SUCCESS;
@@ -158,7 +165,11 @@ export class PaymentService {
       rawCallbackPayload?: Record<string, unknown>;
     },
   ): Promise<Payment> {
-    const payment = await manager.findOne(Payment, { where: { orderId } });
+    const payment = await manager
+      .createQueryBuilder(Payment, 'payment')
+      .where('payment.orderId = :orderId', { orderId })
+      .setLock('pessimistic_write')
+      .getOne();
 
     if (!payment) {
       throw new NotFoundException(`Payment for order ${orderId} not found`);

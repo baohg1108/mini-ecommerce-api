@@ -111,6 +111,14 @@ export class ProductController {
   }
 
   @Roles(UserRole.ADMIN)
+  @Get('admin/:id')
+  async findOneForAdmin(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ProductDetailsResponseDto> {
+    return this.productService.findOneForAdmin(id);
+  }
+
+  @Roles(UserRole.ADMIN)
   @Patch('admin/:id/approve')
   async approve(
     @CurrentUserId() adminId: string,
@@ -152,6 +160,7 @@ export class ProductController {
   }
 
   @Get(':id')
+  @IsPublic()
   async findOneProductDetail(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ProductDetailsResponseDto> {

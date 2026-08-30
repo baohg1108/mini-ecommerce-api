@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { Shop } from '../shops/entities/shop.entity';
 import { ProductStatus } from '../../common/enums/product-status.enum';
@@ -20,6 +20,7 @@ import { ProductImage } from './entities/product-image.entity';
 import { SearchProductDto, ProductSortBy } from './dtos/search-product.dto';
 import { SearchProductResponseDto } from './dtos/search-product.response.dto';
 import { ProductListItemDto } from './dtos/public-product-response.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 @Injectable()
 export class ProductService {
   constructor(
@@ -30,6 +31,8 @@ export class ProductService {
     @InjectRepository(ProductImage)
     private readonly imageRepo: Repository<ProductImage>,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly dataSource: DataSource,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // FR-11: create product
@@ -160,6 +163,17 @@ export class ProductService {
 
   async findOneProductDetail(id: string): Promise<ProductDetailsResponseDto> {
     const product = await this.productRepo.findOne({
+      where: { id, status: ProductStatus.ACTIVE },
+      relations: { images: true },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+    return new ProductDetailsResponseDto(product);
+  }
+
+  async findOneForAdmin(id: string): Promise<ProductDetailsResponseDto> {
+    const product = await this.productRepo.findOne({
       where: { id },
       relations: { images: true },
     });
@@ -170,20 +184,32 @@ export class ProductService {
   }
 
   async approve(adminId: string, productId: string): Promise<Product> {
-    const product = await this.findPendingOrThrow(productId);
+    return this.dataSource.transaction(async (manager) => {
+      const product = await manager.findOne(Product, {
+        where: { id: productId },
+        relations: { images: true, shop: true },
+      });
+      if (!product) throw new NotFoundException('No products found');
+      if (product.status !== ProductStatus.PENDING) {
+        throw new BadRequestException(
+          'You can only approve or reject products that are in pending approval status',
+        );
+      }
+      product.status = ProductStatus.ACTIVE;
+      product.approvedBy = adminId;
+      product.approvedAt = new Date();
+      product.rejectionReason = null;
+      const saved = await manager.save(Product, product);
 
-    product.status = ProductStatus.ACTIVE;
-    product.approvedBy = adminId;
-    product.approvedAt = new Date();
-    product.rejectionReason = null;
+      // FR-41: notify the seller when their product is approved
+      await this.notificationsService.create(
+        manager,
+        product.shop.userId,
+        'Your product has been approved',
+        `Your product "${product.name}" has been approved and is now publicly visible.`,
+      );
 
-    await this.productRepo.save(product);
-
-    return this.productRepo.findOneOrFail({
-      where: { id: productId },
-      relations: {
-        images: true,
-      },
+      return saved;
     });
   }
 
@@ -193,46 +219,68 @@ export class ProductService {
     productId: string,
     rejectionReason: string,
   ): Promise<Product> {
-    const product = await this.findPendingOrThrow(productId);
+    return this.dataSource.transaction(async (manager) => {
+      const product = await manager.findOne(Product, {
+        where: { id: productId },
+        relations: { images: true, shop: true },
+      });
+      if (!product) throw new NotFoundException('No products found');
+      if (product.status !== ProductStatus.PENDING) {
+        throw new BadRequestException(
+          'You can only approve or reject products that are in pending approval status',
+        );
+      }
+      product.status = ProductStatus.REJECTED;
+      product.rejectionReason = rejectionReason;
+      product.approvedBy = adminId;
+      product.approvedAt = null;
+      const saved = await manager.save(Product, product);
 
-    product.status = ProductStatus.REJECTED;
-    product.rejectionReason = rejectionReason;
-    product.approvedBy = adminId;
-    product.approvedAt = null;
+      // FR-41: notify the seller when their product is rejected
+      await this.notificationsService.create(
+        manager,
+        product.shop.userId,
+        'Your product has been rejected',
+        `Your product "${product.name}" has been rejected. Reason: ${rejectionReason}`,
+      );
 
-    await this.productRepo.save(product);
-
-    return this.productRepo.findOneOrFail({
-      where: { id: productId },
-      relations: {
-        images: true,
-      },
+      return saved;
     });
   }
 
-  // FR-14: remove product by admin
+  // FR-14: remove product by admin (policy violation)
   async removeByAdmin(productId: string, reason: string): Promise<Product> {
-    const product = await this.productRepo.findOne({
-      where: { id: productId },
-      relations: {
-        images: true,
-      },
+    return this.dataSource.transaction(async (manager) => {
+      const product = await manager.findOne(Product, {
+        where: { id: productId },
+        relations: { images: true, shop: true },
+      });
+      if (!product) throw new NotFoundException('No products found');
+
+      if (
+        ![
+          ProductStatus.ACTIVE,
+          ProductStatus.HIDDEN,
+          ProductStatus.OUT_OF_STOCK,
+        ].includes(product.status)
+      ) {
+        throw new BadRequestException('This product cannot be removed');
+      }
+
+      product.status = ProductStatus.REMOVED;
+      product.removedReason = reason;
+      const saved = await manager.save(Product, product);
+
+      // FR-41: notify the seller when their product is removed for violation
+      await this.notificationsService.create(
+        manager,
+        product.shop.userId,
+        'Your product has been removed',
+        `Your product "${product.name}" has been removed for violating our policies. Reason: ${reason}`,
+      );
+
+      return saved;
     });
-    if (!product) throw new NotFoundException('No products found');
-
-    if (
-      ![
-        ProductStatus.ACTIVE,
-        ProductStatus.HIDDEN,
-        ProductStatus.OUT_OF_STOCK,
-      ].includes(product.status)
-    ) {
-      throw new BadRequestException('This product cannot be removed');
-    }
-
-    product.status = ProductStatus.REMOVED;
-    product.removedReason = reason;
-    return this.productRepo.save(product);
   }
 
   // FR-13: delete product
