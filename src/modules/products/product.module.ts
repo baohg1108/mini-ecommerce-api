@@ -14,11 +14,14 @@ import { Shop } from '../shops/entities/shop.entity';
 import { UsersModule } from '../users/users.module';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 
+import { NotificationsModule } from '../notifications/notifications.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Product, ProductImage, Shop]),
     UsersModule,
     CloudinaryModule,
+    NotificationsModule,
   ],
   controllers: [ProductController, ProductImageController],
   providers: [ProductService, ProductImageService],
