@@ -31,6 +31,18 @@ export class VnpayIpnDto {
 
   @IsString()
   @IsOptional()
+  vnp_BankTranNo?: string;
+
+  @IsString()
+  @IsOptional()
+  vnp_CardType?: string;
+
+  @IsString()
+  @IsOptional()
+  vnp_OrderInfo?: string;
+
+  @IsString()
+  @IsOptional()
   vnp_PayDate?: string;
 
   @IsString()
@@ -40,6 +52,4 @@ export class VnpayIpnDto {
   @IsString()
   @IsOptional()
   vnp_SecureHashType?: string;
-
-  [key: string]: unknown;
 }
