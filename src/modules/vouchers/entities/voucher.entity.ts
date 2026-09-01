@@ -95,6 +95,13 @@ export class Voucher {
   usedCount!: number;
 
   @Column({
+    name: 'usage_limit_per_user',
+    type: 'int',
+    nullable: true,
+  })
+  usageLimitPerUser!: number | null;
+
+  @Column({
     type: 'enum',
     enum: VoucherScope,
     enumName: 'voucher_scope_enum',

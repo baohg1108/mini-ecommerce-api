@@ -13,6 +13,7 @@ export class VoucherResponseDto {
   endDate!: Date;
   usageLimit!: number;
   usedCount!: number;
+  usageLimitPerUser!: number | null;
   scope!: VoucherScope;
   shopId!: string | null;
   status!: VoucherStatus;
