@@ -9,7 +9,16 @@ import { VoucherType } from '../../common/enums/voucher-type.enum';
 import { AppException } from '../../common/exceptions/app.exception';
 import { VoucherErrorCode } from './constants/voucher-error-code.constant';
 import { VoucherOrderContext } from './interfaces/voucher-order-context.interface';
-import { VoucherValidationResult } from './interfaces/voucher-validation-result.interface';
+import {
+  VoucherCombinationResult,
+  VoucherValidationResult,
+} from './interfaces/voucher-validation-result.interface';
+import {
+  assertNoVoucherScopeConflict,
+  assertVoucherScopeApplicable,
+} from './utils/voucher-scope.util';
+
+const MIN_PAYABLE_AMOUNT = 1000;
 
 @Injectable()
 export class VoucherValidationService {
@@ -60,6 +69,63 @@ export class VoucherValidationService {
     });
   }
 
+  async validateVoucherCombination(
+    voucherCodes: string[],
+    userId: string,
+    orderContext: VoucherOrderContext,
+  ): Promise<VoucherCombinationResult> {
+    const uniqueCodes = Array.from(
+      new Set(voucherCodes.map((code) => code.trim().toUpperCase())),
+    ).filter(Boolean);
+
+    if (uniqueCodes.length === 0) {
+      return {
+        results: [],
+        totalDiscount: 0,
+        finalAmount: orderContext.orderAmount,
+      };
+    }
+
+    const rawResults: VoucherValidationResult[] = [];
+    for (const code of uniqueCodes) {
+      rawResults.push(await this.validateVoucher(code, userId, orderContext));
+    }
+
+    assertNoVoucherScopeConflict(rawResults.map((r) => r.voucher));
+
+    // Trừ tuần tự: SYSTEM trước, SHOP sau
+    const orderedResults = [...rawResults].sort((a, b) => {
+      if (a.voucher.scope === b.voucher.scope) return 0;
+      return a.voucher.scope === VoucherScope.SYSTEM ? -1 : 1;
+    });
+
+    let remaining = orderContext.orderAmount;
+
+    for (const { discountAmount: rawDiscount } of orderedResults) {
+      remaining = remaining - rawDiscount;
+
+      if (remaining <= 0) {
+        remaining = MIN_PAYABLE_AMOUNT;
+      }
+    }
+
+    const finalAmount = remaining;
+    const totalDiscount = orderContext.orderAmount - finalAmount;
+
+    const resultsInInputOrder = uniqueCodes.map(
+      (code) =>
+        rawResults.find(
+          (r) => r.voucher.code === code,
+        ) as VoucherValidationResult,
+    );
+
+    return {
+      results: resultsInInputOrder,
+      totalDiscount,
+      finalAmount,
+    };
+  }
+
   private async findVoucherByCode(
     rawCode: string,
     shopId?: string | null,
@@ -81,16 +147,7 @@ export class VoucherValidationService {
     voucher: Voucher,
     orderContext: VoucherOrderContext,
   ): void {
-    if (
-      voucher.scope === VoucherScope.SHOP &&
-      voucher.shopId !== (orderContext.shopId ?? null)
-    ) {
-      throw new AppException(
-        VoucherErrorCode.SHOP_MISMATCH,
-        'Voucher does not belong to this shop',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
+    assertVoucherScopeApplicable(voucher, orderContext.shopId);
   }
 
   private assertNotDisabled(voucher: Voucher): void {
@@ -187,6 +244,7 @@ export class VoucherValidationService {
       discount = voucher.discountValue;
     }
 
+    // Không để voucher giảm nhiều hơn giá trị đơn hàng
     return Math.min(discount, orderAmount);
   }
 }
