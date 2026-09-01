@@ -16,6 +16,8 @@ import { CartItemResponseDto } from './dtos/cart-item.response.dto';
 import { ProductStatus } from '../../common/enums/product-status.enum';
 import { ShopStatus } from '../../common/enums/shop-status.enum';
 import { GroupedCartDto, ShopInfoDto } from './dtos/grouped-cart.dto';
+import { VoucherValidationService } from '../vouchers/voucher-validation.service';
+import { AvailableVoucherResponseDto } from '../../modules/vouchers/dtos/available-voucher.response.dto';
 
 @Injectable()
 export class CartService {
@@ -27,6 +29,7 @@ export class CartService {
     @InjectRepository(ProductVariant)
     private readonly variantRepository: Repository<ProductVariant>,
     private readonly dataSource: DataSource,
+    private readonly voucherValidationService: VoucherValidationService,
   ) {}
 
   // UC-07: add to cart
@@ -253,6 +256,37 @@ export class CartService {
     });
 
     return this.groupItemsByShop(items);
+  }
+
+  async getAvailableVouchers(
+    userId: string,
+  ): Promise<AvailableVoucherResponseDto[]> {
+    const groupedCart = await this.getGroupedCartForCheckout(userId);
+
+    if (!groupedCart.length) {
+      return [];
+    }
+
+    const results = await this.voucherValidationService.findAvailableVouchers(
+      userId,
+      groupedCart,
+    );
+
+    return results.map(
+      ({ voucher, discountAmount }) =>
+        new AvailableVoucherResponseDto({
+          id: voucher.id,
+          code: voucher.code,
+          discountType: voucher.discountType,
+          discountValue: voucher.discountValue,
+          minOrderValue: voucher.minOrderValue,
+          maxDiscountValue: voucher.maxDiscountValue,
+          scope: voucher.scope,
+          shopId: voucher.shopId,
+          endDate: voucher.endDate,
+          discountAmount,
+        }),
+    );
   }
 
   groupItemsByShop(items: CartItem[]): GroupedCartDto[] {

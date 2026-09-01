@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { Voucher } from './entities/voucher.entity';
 import { VoucherUsage } from './entities/voucher-usage.entity';
 import { VoucherScope } from '../../common/enums/voucher-scope.enum';
@@ -17,6 +17,7 @@ import {
   assertNoVoucherScopeConflict,
   assertVoucherScopeApplicable,
 } from './utils/voucher-scope.util';
+import { GroupedCartDto } from '../cart/dtos/grouped-cart.dto';
 
 const MIN_PAYABLE_AMOUNT = 1000;
 
@@ -124,6 +125,89 @@ export class VoucherValidationService {
       totalDiscount,
       finalAmount,
     };
+  }
+
+  // ==========================================================================
+  // GET /cart/available-vouchers — liệt kê voucher hợp lệ cho giỏ hàng hiện
+  // tại. Khác với validateVoucher (check 1 mã cụ thể, throw nếu sai), hàm
+  // này quét toàn bộ voucher ứng viên và ÂM THẦM bỏ qua voucher không đạt
+  // điều kiện thay vì throw — vì đây là danh sách gợi ý, không phải áp mã.
+  // ==========================================================================
+  async findAvailableVouchers(
+    userId: string,
+    groupedCart: GroupedCartDto[],
+  ): Promise<VoucherValidationResult[]> {
+    if (!groupedCart.length) {
+      return [];
+    }
+
+    const shopIds = groupedCart.map((group) => group.shop.id);
+    const cartTotal = groupedCart.reduce(
+      (sum, group) => sum + this.sumGroupSubtotal(group),
+      0,
+    );
+    const now = new Date();
+
+    // SCRUM-72: ứng viên là voucher SYSTEM (áp toàn hệ thống) hoặc voucher
+    // SHOP thuộc đúng 1 trong các shop có mặt trong giỏ hàng.
+    const candidates = await this.voucherRepository.find({
+      where: [
+        {
+          scope: VoucherScope.SYSTEM,
+          status: VoucherStatus.ACTIVE,
+        },
+        {
+          scope: VoucherScope.SHOP,
+          status: VoucherStatus.ACTIVE,
+          shopId: In(shopIds),
+        },
+      ],
+    });
+
+    const results: VoucherValidationResult[] = [];
+
+    for (const voucher of candidates) {
+      // Còn hiệu lực + còn lượt dùng tổng (SCRUM-71)
+      if (now < voucher.startDate || now > voucher.endDate) continue;
+      if (voucher.usedCount >= voucher.usageLimit) continue;
+
+      const orderAmount =
+        voucher.scope === VoucherScope.SYSTEM
+          ? cartTotal
+          : (
+              groupedCart.find((group) => group.shop.id === voucher.shopId)
+                ?.items ?? []
+            ).reduce(
+              (sum, item) => sum + Number(item.price ?? 0) * item.quantity,
+              0,
+            );
+
+      // Đơn (hoặc phần đơn thuộc đúng shop) phải đạt giá trị tối thiểu
+      if (orderAmount < voucher.minOrderValue) continue;
+
+      // Còn lượt dùng riêng của user (nếu voucher có giới hạn)
+      if (
+        voucher.usageLimitPerUser !== null &&
+        voucher.usageLimitPerUser !== undefined
+      ) {
+        const userUsageCount = await this.countUserUsage(voucher.id, userId);
+        if (userUsageCount >= voucher.usageLimitPerUser) continue;
+      }
+
+      results.push({
+        voucher,
+        discountAmount: this.calculateDiscountAmount(voucher, orderAmount),
+      });
+    }
+
+    return results;
+  }
+
+  private sumGroupSubtotal(group: GroupedCartDto): number {
+    return group.items.reduce(
+      (sum, item) => sum + Number(item.price ?? 0) * item.quantity,
+      0,
+    );
   }
 
   private async findVoucherByCode(
@@ -244,6 +328,8 @@ export class VoucherValidationService {
       discount = voucher.discountValue;
     }
 
+    // BR-13: nếu số tiền giảm >= giá trị đơn hàng, đơn vẫn phải thanh toán
+    // tối thiểu MIN_PAYABLE_AMOUNT (1000đ) thay vì được giảm về 0.
     if (orderAmount - discount < MIN_PAYABLE_AMOUNT) {
       discount = Math.max(orderAmount - MIN_PAYABLE_AMOUNT, 0);
     }
@@ -251,6 +337,9 @@ export class VoucherValidationService {
     return discount;
   }
 
+  // Ghi nhận lượt sử dụng voucher: tăng usedCount + lưu VoucherUsage.
+  // Bắt buộc chạy trong cùng transaction tạo đơn (nhận `manager` từ ngoài
+  // truyền vào) để tránh sai lệch dữ liệu nếu tạo đơn thất bại giữa chừng.
   async recordUsage(
     manager: EntityManager,
     voucherId: string,
