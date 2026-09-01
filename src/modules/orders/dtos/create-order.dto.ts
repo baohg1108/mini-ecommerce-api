@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsEnum,
   IsOptional,
   IsString,
@@ -35,7 +37,9 @@ export class CreateOrderDto {
   note?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  voucherCode?: string;
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  voucherCodes?: string[];
 }

@@ -10,7 +10,8 @@ import { AppException } from '../../common/exceptions/app.exception';
 import { VoucherErrorCode } from './constants/voucher-error-code.constant';
 import { VoucherOrderContext } from './interfaces/voucher-order-context.interface';
 import {
-  VoucherCombinationResult,
+  CartVoucherApplicationResult,
+  ShopVoucherAllocation,
   VoucherValidationResult,
 } from './interfaces/voucher-validation-result.interface';
 import {
@@ -70,69 +71,237 @@ export class VoucherValidationService {
     });
   }
 
-  async validateVoucherCombination(
+
+  async applyVouchersToCart(
     voucherCodes: string[],
     userId: string,
-    orderContext: VoucherOrderContext,
-  ): Promise<VoucherCombinationResult> {
+    groupedCart: GroupedCartDto[],
+  ): Promise<CartVoucherApplicationResult> {
+    if (!groupedCart.length) {
+      throw new AppException(
+        VoucherErrorCode.NOT_FOUND,
+        'Cart is empty',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const shopIds = groupedCart.map((group) => group.shop.id);
+    const shopSubtotals = new Map<string, number>();
+    for (const group of groupedCart) {
+      shopSubtotals.set(group.shop.id, this.sumGroupSubtotal(group));
+    }
+    const cartTotal = Array.from(shopSubtotals.values()).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+
     const uniqueCodes = Array.from(
       new Set(voucherCodes.map((code) => code.trim().toUpperCase())),
     ).filter(Boolean);
 
-    if (uniqueCodes.length === 0) {
-      return {
-        results: [],
-        totalDiscount: 0,
-        finalAmount: orderContext.orderAmount,
-      };
-    }
-
-    const rawResults: VoucherValidationResult[] = [];
+    const resolved: VoucherValidationResult[] = [];
     for (const code of uniqueCodes) {
-      rawResults.push(await this.validateVoucher(code, userId, orderContext));
+      const voucher = await this.resolveVoucherForShops(code, shopIds);
+
+      if (!voucher) {
+        throw new AppException(
+          VoucherErrorCode.NOT_FOUND,
+          `Voucher code ${code} does not exist`,
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const orderAmount =
+        voucher.scope === VoucherScope.SYSTEM
+          ? cartTotal
+          : (shopSubtotals.get(voucher.shopId as string) ?? 0);
+
+      this.assertNotDisabled(voucher);
+      this.assertWithinEffectivePeriod(voucher);
+      this.assertTotalUsageNotExceeded(voucher);
+      this.assertMinOrderValueMet(voucher, {
+        orderAmount,
+        shopId: voucher.shopId,
+      });
+      await this.assertUserUsageNotExceeded(voucher, userId);
+
+      resolved.push({
+        voucher,
+        discountAmount: this.calculateDiscountAmount(voucher, orderAmount),
+      });
     }
 
-    assertNoVoucherScopeConflict(rawResults.map((r) => r.voucher));
+    assertNoVoucherScopeConflict(resolved.map((r) => r.voucher));
 
-    // Trừ tuần tự: SYSTEM trước, SHOP sau
-    const orderedResults = [...rawResults].sort((a, b) => {
-      if (a.voucher.scope === b.voucher.scope) return 0;
-      return a.voucher.scope === VoucherScope.SYSTEM ? -1 : 1;
-    });
-
-    let remaining = orderContext.orderAmount;
-
-    for (const { discountAmount: rawDiscount } of orderedResults) {
-      remaining = remaining - rawDiscount;
-
-      if (remaining <= 0) {
-        remaining = MIN_PAYABLE_AMOUNT;
+    const systemResult = resolved.find(
+      (r) => r.voucher.scope === VoucherScope.SYSTEM,
+    );
+    const shopResultByShopId = new Map<string, VoucherValidationResult>();
+    for (const r of resolved) {
+      if (r.voucher.scope === VoucherScope.SHOP) {
+        shopResultByShopId.set(r.voucher.shopId as string, r);
       }
     }
 
-    const finalAmount = remaining;
-    const totalDiscount = orderContext.orderAmount - finalAmount;
+    const isMultiShop = groupedCart.length > 1;
 
-    const resultsInInputOrder = uniqueCodes.map(
-      (code) =>
-        rawResults.find(
-          (r) => r.voucher.code === code,
-        ) as VoucherValidationResult,
+    if (isMultiShop) {
+      return this.allocateMultiShop(
+        groupedCart,
+        shopSubtotals,
+        cartTotal,
+        systemResult,
+        shopResultByShopId,
+      );
+    }
+
+    return this.allocateSingleShop(
+      groupedCart[0],
+      shopSubtotals,
+      systemResult,
+      shopResultByShopId,
+    );
+  }
+
+  private allocateMultiShop(
+    groupedCart: GroupedCartDto[],
+    shopSubtotals: Map<string, number>,
+    cartTotal: number,
+    systemResult: VoucherValidationResult | undefined,
+    shopResultByShopId: Map<string, VoucherValidationResult>,
+  ): CartVoucherApplicationResult {
+    const remainingPerShop = new Map<string, number>();
+    let remainingAfterShop = cartTotal;
+
+    for (const group of groupedCart) {
+      const shopId = group.shop.id;
+      const subtotal = shopSubtotals.get(shopId) ?? 0;
+      const shopDiscount = shopResultByShopId.get(shopId)?.discountAmount ?? 0;
+      const remaining = subtotal - shopDiscount;
+
+      remainingPerShop.set(shopId, remaining);
+      remainingAfterShop -= shopDiscount;
+    }
+
+    let systemDiscountTotal = 0;
+    if (systemResult) {
+      systemDiscountTotal = this.calculateDiscountAmount(
+        systemResult.voucher,
+        remainingAfterShop,
+      );
+    }
+
+
+    const shopAllocations: ShopVoucherAllocation[] = groupedCart.map(
+      (group) => {
+        const shopId = group.shop.id;
+        const subtotal = shopSubtotals.get(shopId) ?? 0;
+        const shopResult = shopResultByShopId.get(shopId);
+        const shopDiscount = shopResult?.discountAmount ?? 0;
+        const remaining = remainingPerShop.get(shopId) ?? 0;
+
+        const systemShare =
+          systemDiscountTotal > 0 && remainingAfterShop > 0
+            ? (remaining / remainingAfterShop) * systemDiscountTotal
+            : 0;
+
+        const totalDiscount = shopDiscount + systemShare;
+
+        return {
+          shopId,
+          subtotal,
+          shopVoucher: shopResult
+            ? { voucher: shopResult.voucher, discountAmount: shopDiscount }
+            : undefined,
+          systemDiscountAllocated: systemShare,
+          totalDiscount,
+          finalAmount: subtotal - totalDiscount,
+        };
+      },
+    );
+
+    const totalDiscount = shopAllocations.reduce(
+      (sum, a) => sum + a.totalDiscount,
+      0,
     );
 
     return {
-      results: resultsInInputOrder,
+      systemVoucher: systemResult,
+      shopAllocations,
+      cartTotal,
       totalDiscount,
-      finalAmount,
+      finalAmount: cartTotal - totalDiscount,
     };
   }
 
-  // ==========================================================================
-  // GET /cart/available-vouchers — liệt kê voucher hợp lệ cho giỏ hàng hiện
-  // tại. Khác với validateVoucher (check 1 mã cụ thể, throw nếu sai), hàm
-  // này quét toàn bộ voucher ứng viên và ÂM THẦM bỏ qua voucher không đạt
-  // điều kiện thay vì throw — vì đây là danh sách gợi ý, không phải áp mã.
-  // ==========================================================================
+  private allocateSingleShop(
+    group: GroupedCartDto,
+    shopSubtotals: Map<string, number>,
+    systemResult: VoucherValidationResult | undefined,
+    shopResultByShopId: Map<string, VoucherValidationResult>,
+  ): CartVoucherApplicationResult {
+    const shopId = group.shop.id;
+    const subtotal = shopSubtotals.get(shopId) ?? 0;
+
+    let remaining = subtotal;
+
+    let systemDiscount = 0;
+    if (systemResult) {
+      systemDiscount = this.calculateDiscountAmount(
+        systemResult.voucher,
+        remaining,
+      );
+      remaining -= systemDiscount;
+      if (remaining <= 0) remaining = MIN_PAYABLE_AMOUNT;
+    }
+
+    const shopResult = shopResultByShopId.get(shopId);
+    let shopDiscount = 0;
+    if (shopResult) {
+      shopDiscount = this.calculateDiscountAmount(
+        shopResult.voucher,
+        remaining,
+      );
+      remaining -= shopDiscount;
+      if (remaining <= 0) remaining = MIN_PAYABLE_AMOUNT;
+    }
+
+    const totalDiscount = subtotal - remaining;
+
+    const allocation: ShopVoucherAllocation = {
+      shopId,
+      subtotal,
+      shopVoucher: shopResult
+        ? { voucher: shopResult.voucher, discountAmount: shopDiscount }
+        : undefined,
+      systemDiscountAllocated: systemDiscount,
+      totalDiscount,
+      finalAmount: remaining,
+    };
+
+    return {
+      systemVoucher: systemResult,
+      shopAllocations: [allocation],
+      cartTotal: subtotal,
+      totalDiscount,
+      finalAmount: remaining,
+    };
+  }
+.
+  private async resolveVoucherForShops(
+    rawCode: string,
+    shopIds: string[],
+  ): Promise<Voucher | null> {
+    const code = rawCode.trim().toUpperCase();
+
+    return this.voucherRepository.findOne({
+      where: [
+        { code, scope: VoucherScope.SYSTEM },
+        { code, scope: VoucherScope.SHOP, shopId: In(shopIds) },
+      ],
+    });
+  }
+
   async findAvailableVouchers(
     userId: string,
     groupedCart: GroupedCartDto[],
@@ -148,8 +317,6 @@ export class VoucherValidationService {
     );
     const now = new Date();
 
-    // SCRUM-72: ứng viên là voucher SYSTEM (áp toàn hệ thống) hoặc voucher
-    // SHOP thuộc đúng 1 trong các shop có mặt trong giỏ hàng.
     const candidates = await this.voucherRepository.find({
       where: [
         {
@@ -182,10 +349,8 @@ export class VoucherValidationService {
               0,
             );
 
-      // Đơn (hoặc phần đơn thuộc đúng shop) phải đạt giá trị tối thiểu
       if (orderAmount < voucher.minOrderValue) continue;
 
-      // Còn lượt dùng riêng của user (nếu voucher có giới hạn)
       if (
         voucher.usageLimitPerUser !== null &&
         voucher.usageLimitPerUser !== undefined
@@ -327,9 +492,6 @@ export class VoucherValidationService {
     } else {
       discount = voucher.discountValue;
     }
-
-    // BR-13: nếu số tiền giảm >= giá trị đơn hàng, đơn vẫn phải thanh toán
-    // tối thiểu MIN_PAYABLE_AMOUNT (1000đ) thay vì được giảm về 0.
     if (orderAmount - discount < MIN_PAYABLE_AMOUNT) {
       discount = Math.max(orderAmount - MIN_PAYABLE_AMOUNT, 0);
     }
@@ -337,9 +499,6 @@ export class VoucherValidationService {
     return discount;
   }
 
-  // Ghi nhận lượt sử dụng voucher: tăng usedCount + lưu VoucherUsage.
-  // Bắt buộc chạy trong cùng transaction tạo đơn (nhận `manager` từ ngoài
-  // truyền vào) để tránh sai lệch dữ liệu nếu tạo đơn thất bại giữa chừng.
   async recordUsage(
     manager: EntityManager,
     voucherId: string,
