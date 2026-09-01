@@ -11,9 +11,6 @@ import { VoucherErrorCode } from './constants/voucher-error-code.constant';
 import { VoucherOrderContext } from './interfaces/voucher-order-context.interface';
 import { VoucherValidationResult } from './interfaces/voucher-validation-result.interface';
 
-// Tam thoi cho 1 user use 1 voucher 1 lan (BR-13). Sau nay co the mo rong them config cho shop/phan quyen user
-const DEFAULT_USAGE_LIMIT_PER_USER = 1;
-
 @Injectable()
 export class VoucherValidationService {
   constructor(
@@ -153,9 +150,16 @@ export class VoucherValidationService {
     voucher: Voucher,
     userId: string,
   ): Promise<void> {
+    if (
+      voucher.usageLimitPerUser === null ||
+      voucher.usageLimitPerUser === undefined
+    ) {
+      return;
+    }
+
     const userUsageCount = await this.countUserUsage(voucher.id, userId);
 
-    if (userUsageCount >= DEFAULT_USAGE_LIMIT_PER_USER) {
+    if (userUsageCount >= voucher.usageLimitPerUser) {
       throw new AppException(
         VoucherErrorCode.USER_LIMIT_REACHED,
         'You have reached the usage limit for this voucher',

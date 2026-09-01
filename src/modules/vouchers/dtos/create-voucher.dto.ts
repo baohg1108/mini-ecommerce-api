@@ -54,4 +54,13 @@ export class CreateVoucherDto {
   @IsInt()
   @Min(1)
   usageLimit!: number;
+
+  // limit 1 user used voucher
+  // if none or undefined = no limit (ex: freeship voucher)
+  // if = 1 = limit (ex: voucher discount 50% for new user)
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  usageLimitPerUser?: number;
 }
