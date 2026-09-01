@@ -6,11 +6,13 @@ import { ProductVariant } from '../product-variant/entities/product-variant.enti
 import { CartService } from './cart.service';
 import { CartController } from './cart.controller';
 import { UsersModule } from '../users/users.module';
+import { VouchersModule } from '../vouchers/vouchers.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Cart, CartItem, ProductVariant]),
     UsersModule,
+    VouchersModule,
   ],
   controllers: [CartController],
   providers: [CartService],
