@@ -67,6 +67,7 @@ export class VouchersService {
       endDate,
       usageLimit: createVoucherDto.usageLimit,
       usedCount: 0,
+      usageLimitPerUser: createVoucherDto.usageLimitPerUser ?? null,
       scope,
       shopId,
       status,
