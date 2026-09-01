@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { Voucher } from './entities/voucher.entity';
 import { VoucherUsage } from './entities/voucher-usage.entity';
 import { VoucherScope } from '../../common/enums/voucher-scope.enum';
@@ -244,7 +244,29 @@ export class VoucherValidationService {
       discount = voucher.discountValue;
     }
 
-    // Không để voucher giảm nhiều hơn giá trị đơn hàng
-    return Math.min(discount, orderAmount);
+    if (orderAmount - discount < MIN_PAYABLE_AMOUNT) {
+      discount = Math.max(orderAmount - MIN_PAYABLE_AMOUNT, 0);
+    }
+
+    return discount;
+  }
+
+  async recordUsage(
+    manager: EntityManager,
+    voucherId: string,
+    userId: string,
+    orderId: string,
+    discountAmount: number,
+  ): Promise<void> {
+    await manager.increment(Voucher, { id: voucherId }, 'usedCount', 1);
+
+    const usage = manager.create(VoucherUsage, {
+      voucherId,
+      userId,
+      orderId,
+      discountAmount,
+    });
+
+    await manager.save(VoucherUsage, usage);
   }
 }
