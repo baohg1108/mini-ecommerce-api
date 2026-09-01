@@ -32,6 +32,7 @@ import { OrderStatus } from '../../common/enums/order-status.enum';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { VoucherValidationService } from '../vouchers/voucher-validation.service';
+import { ShopVoucherAllocation } from '../vouchers/interfaces/voucher-validation-result.interface';
 
 @Injectable()
 export class OrdersService {
@@ -70,39 +71,68 @@ export class OrdersService {
         );
       }
     }
-    if (dto.voucherCode && groupedCart.length > 1) {
-      throw new BadRequestException(
-        'Voucher can only be applied when checkout contains items from a single shop',
-      );
-    }
+    const voucherCodes = dto.voucherCodes ?? [];
+    const voucherApplication = voucherCodes.length
+      ? await this.voucherValidationService.applyVouchersToCart(
+          voucherCodes,
+          userId,
+          groupedCart,
+        )
+      : undefined;
 
     return this.dataSource.transaction(async (manager) => {
       const createdOrders: Order[] = [];
-      let appliedVoucher:
-        | { voucherId: string; discountAmount: number; orderId: string }
-        | undefined;
+      const usagesToRecord: Array<{
+        voucherId: string;
+        discountAmount: number;
+        orderId: string;
+      }> = [];
+
+      let systemUsageOrderId: string | undefined;
+      let systemUsageTotalDiscount = 0;
 
       for (const group of groupedCart) {
-        const { order, appliedVoucherId, discountAmount } =
-          await this.createOrderForShop(manager, userId, group, dto);
+        const allocation = voucherApplication?.shopAllocations.find(
+          (a) => a.shopId === group.shop.id,
+        );
+
+        const { order, usages } = await this.createOrderForShop(
+          manager,
+          userId,
+          group,
+          dto,
+          allocation,
+          voucherApplication?.systemVoucher,
+        );
         createdOrders.push(order);
 
-        if (appliedVoucherId) {
-          appliedVoucher = {
-            voucherId: appliedVoucherId,
-            discountAmount,
-            orderId: order.id,
-          };
+        for (const usage of usages) {
+          if (
+            usage.voucherId === voucherApplication?.systemVoucher?.voucher.id
+          ) {
+            systemUsageOrderId ??= usage.orderId;
+            systemUsageTotalDiscount += usage.discountAmount;
+            continue;
+          }
+          usagesToRecord.push(usage);
         }
       }
 
-      if (appliedVoucher) {
+      if (voucherApplication?.systemVoucher && systemUsageOrderId) {
+        usagesToRecord.push({
+          voucherId: voucherApplication.systemVoucher.voucher.id,
+          discountAmount: systemUsageTotalDiscount,
+          orderId: systemUsageOrderId,
+        });
+      }
+
+      for (const usage of usagesToRecord) {
         await this.voucherValidationService.recordUsage(
           manager,
-          appliedVoucher.voucherId,
+          usage.voucherId,
           userId,
-          appliedVoucher.orderId,
-          appliedVoucher.discountAmount,
+          usage.orderId,
+          usage.discountAmount,
         );
       }
 
@@ -132,10 +162,15 @@ export class OrdersService {
     userId: string,
     group: GroupedCartDto,
     dto: CreateOrderDto,
+    allocation?: ShopVoucherAllocation,
+    systemVoucher?: { voucher: { id: string; code: string } },
   ): Promise<{
     order: Order;
-    appliedVoucherId?: string;
-    discountAmount: number;
+    usages: Array<{
+      voucherId: string;
+      discountAmount: number;
+      orderId: string;
+    }>;
   }> {
     let subtotal = 0;
     const orderItemsData: Partial<OrderItem>[] = [];
@@ -180,22 +215,21 @@ export class OrdersService {
       });
     }
 
-    let discount = 0;
-    let appliedVoucherId: string | undefined;
-    let appliedVoucherCode: string | undefined;
+    const shopVoucher = allocation?.shopVoucher;
+    const shopDiscount = shopVoucher?.discountAmount ?? 0;
+    const systemDiscount = allocation?.systemDiscountAllocated ?? 0;
+    const discount = shopDiscount + systemDiscount;
 
-    if (dto.voucherCode) {
-      const { voucher, discountAmount } =
-        await this.voucherValidationService.validateVoucher(
-          dto.voucherCode,
-          userId,
-          { shopId: group.shop.id, orderAmount: subtotal },
-        );
+    const appliedVoucherId =
+      shopVoucher?.voucher.id ?? systemVoucher?.voucher.id;
+    const appliedVoucherCode =
+      shopVoucher?.voucher.code ?? systemVoucher?.voucher.code;
 
-      discount = discountAmount;
-      appliedVoucherId = voucher.id;
-      appliedVoucherCode = voucher.code;
-    }
+    const usages: Array<{
+      voucherId: string;
+      discountAmount: number;
+      orderId: string;
+    }> = [];
 
     const shippingFee = 0;
     const totalAmount = subtotal - discount + shippingFee;
@@ -234,7 +268,22 @@ export class OrdersService {
       dto.paymentMethod,
     );
 
-    return { order: savedOrder, appliedVoucherId, discountAmount: discount };
+    if (shopVoucher && shopDiscount > 0) {
+      usages.push({
+        voucherId: shopVoucher.voucher.id,
+        discountAmount: shopDiscount,
+        orderId: savedOrder.id,
+      });
+    }
+    if (systemVoucher && systemDiscount > 0) {
+      usages.push({
+        voucherId: systemVoucher.voucher.id,
+        discountAmount: systemDiscount,
+        orderId: savedOrder.id,
+      });
+    }
+
+    return { order: savedOrder, usages };
   }
   async confirmOrder(
     orderId: string,

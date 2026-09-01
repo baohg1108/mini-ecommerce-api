@@ -34,7 +34,6 @@ export function assertNoVoucherScopeConflict(
   const systemVouchers = vouchers.filter(
     (v) => v.scope === VoucherScope.SYSTEM,
   );
-  const shopVouchers = vouchers.filter((v) => v.scope === VoucherScope.SHOP);
 
   if (systemVouchers.length > 1) {
     throw new AppException(
@@ -44,11 +43,21 @@ export function assertNoVoucherScopeConflict(
     );
   }
 
-  if (shopVouchers.length > 1) {
-    throw new AppException(
-      VoucherErrorCode.SCOPE_CONFLICT,
-      'Only one shop-level voucher can be applied per order',
-      HttpStatus.BAD_REQUEST,
-    );
+  const shopVoucherCountByShopId = new Map<string, number>();
+
+  for (const voucher of vouchers) {
+    if (voucher.scope !== VoucherScope.SHOP) continue;
+
+    const shopId = voucher.shopId as string;
+    const count = (shopVoucherCountByShopId.get(shopId) ?? 0) + 1;
+    shopVoucherCountByShopId.set(shopId, count);
+
+    if (count > 1) {
+      throw new AppException(
+        VoucherErrorCode.SCOPE_CONFLICT,
+        'Only one shop-level voucher can be applied per shop',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 }
