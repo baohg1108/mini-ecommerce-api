@@ -71,7 +71,6 @@ export class VoucherValidationService {
     });
   }
 
-
   async applyVouchersToCart(
     voucherCodes: string[],
     userId: string,
@@ -191,7 +190,6 @@ export class VoucherValidationService {
       );
     }
 
-
     const shopAllocations: ShopVoucherAllocation[] = groupedCart.map(
       (group) => {
         const shopId = group.shop.id;
@@ -287,7 +285,7 @@ export class VoucherValidationService {
       finalAmount: remaining,
     };
   }
-.
+
   private async resolveVoucherForShops(
     rawCode: string,
     shopIds: string[],
@@ -302,6 +300,7 @@ export class VoucherValidationService {
     });
   }
 
+  // ==========================================================================
   async findAvailableVouchers(
     userId: string,
     groupedCart: GroupedCartDto[],
@@ -334,7 +333,6 @@ export class VoucherValidationService {
     const results: VoucherValidationResult[] = [];
 
     for (const voucher of candidates) {
-      // Còn hiệu lực + còn lượt dùng tổng (SCRUM-71)
       if (now < voucher.startDate || now > voucher.endDate) continue;
       if (voucher.usedCount >= voucher.usageLimit) continue;
 
@@ -492,6 +490,7 @@ export class VoucherValidationService {
     } else {
       discount = voucher.discountValue;
     }
+
     if (orderAmount - discount < MIN_PAYABLE_AMOUNT) {
       discount = Math.max(orderAmount - MIN_PAYABLE_AMOUNT, 0);
     }
