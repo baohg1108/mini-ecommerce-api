@@ -64,6 +64,12 @@ export class Order {
   })
   discountAmount!: string;
 
+  @Column({ name: 'voucher_id', type: 'uuid', nullable: true })
+  voucherId?: string;
+
+  @Column({ name: 'voucher_code', type: 'varchar', length: 50, nullable: true })
+  voucherCode?: string;
+
   @Column({
     name: 'shipping_fee',
     type: 'numeric',

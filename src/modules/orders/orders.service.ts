@@ -31,6 +31,7 @@ import { GroupedCartDto } from '../cart/dtos/grouped-cart.dto';
 import { OrderStatus } from '../../common/enums/order-status.enum';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
+import { VoucherValidationService } from '../vouchers/voucher-validation.service';
 
 @Injectable()
 export class OrdersService {
@@ -45,11 +46,8 @@ export class OrdersService {
     private readonly paymentService: PaymentService,
     private readonly dataSource: DataSource,
     private readonly productVariantService: ProductVariantService,
+    private readonly voucherValidationService: VoucherValidationService,
   ) {}
-
-  // ==========================================================================
-  // UC-08: Checkout — BR-02 (tách đơn theo shop), BE-040 (pessimistic locking)
-  // ==========================================================================
 
   async checkout(
     userId: string,
@@ -72,18 +70,40 @@ export class OrdersService {
         );
       }
     }
+    if (dto.voucherCode && groupedCart.length > 1) {
+      throw new BadRequestException(
+        'Voucher can only be applied when checkout contains items from a single shop',
+      );
+    }
 
     return this.dataSource.transaction(async (manager) => {
       const createdOrders: Order[] = [];
+      let appliedVoucher:
+        | { voucherId: string; discountAmount: number; orderId: string }
+        | undefined;
 
       for (const group of groupedCart) {
-        const order = await this.createOrderForShop(
-          manager,
-          userId,
-          group,
-          dto,
-        );
+        const { order, appliedVoucherId, discountAmount } =
+          await this.createOrderForShop(manager, userId, group, dto);
         createdOrders.push(order);
+
+        if (appliedVoucherId) {
+          appliedVoucher = {
+            voucherId: appliedVoucherId,
+            discountAmount,
+            orderId: order.id,
+          };
+        }
+      }
+
+      if (appliedVoucher) {
+        await this.voucherValidationService.recordUsage(
+          manager,
+          appliedVoucher.voucherId,
+          userId,
+          appliedVoucher.orderId,
+          appliedVoucher.discountAmount,
+        );
       }
 
       const cart = await manager.findOne(Cart, { where: { userId } });
@@ -112,12 +132,14 @@ export class OrdersService {
     userId: string,
     group: GroupedCartDto,
     dto: CreateOrderDto,
-  ): Promise<Order> {
+  ): Promise<{
+    order: Order;
+    appliedVoucherId?: string;
+    discountAmount: number;
+  }> {
     let subtotal = 0;
     const orderItemsData: Partial<OrderItem>[] = [];
 
-    // BE-040: sort theo variantId trước khi lock, tránh deadlock khi nhiều
-    // checkout cùng lúc lock chéo nhau theo thứ tự khác nhau
     const sortedItems = [...group.items].sort((a, b) =>
       a.variantId.localeCompare(b.variantId),
     );
@@ -158,8 +180,24 @@ export class OrdersService {
       });
     }
 
+    let discount = 0;
+    let appliedVoucherId: string | undefined;
+    let appliedVoucherCode: string | undefined;
+
+    if (dto.voucherCode) {
+      const { voucher, discountAmount } =
+        await this.voucherValidationService.validateVoucher(
+          dto.voucherCode,
+          userId,
+          { shopId: group.shop.id, orderAmount: subtotal },
+        );
+
+      discount = discountAmount;
+      appliedVoucherId = voucher.id;
+      appliedVoucherCode = voucher.code;
+    }
+
     const shippingFee = 0;
-    const discount = 0;
     const totalAmount = subtotal - discount + shippingFee;
 
     const order = manager.create(Order, {
@@ -171,6 +209,8 @@ export class OrdersService {
       shippingFullAddress: dto.address.fullAddress,
       subtotalAmount: subtotal.toFixed(2),
       discountAmount: discount.toFixed(2),
+      voucherId: appliedVoucherId,
+      voucherCode: appliedVoucherCode,
       shippingFee: shippingFee.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
       paymentMethod: dto.paymentMethod,
@@ -194,17 +234,8 @@ export class OrdersService {
       dto.paymentMethod,
     );
 
-    return savedOrder;
+    return { order: savedOrder, appliedVoucherId, discountAmount: discount };
   }
-
-  // ==========================================================================
-  // BE-051 (FR-30): Seller cập nhật trạng thái đơn — State Machine (BE-053)
-  // ==========================================================================
-
-  // FR-30: Seller xác nhận đơn (COD hoặc online đã thanh toán)
-  // - COD: trừ tồn kho thật (commitStock) ngay tại bước này
-  // - Online: KHÔNG trừ lại, vì đã được trừ khi IPN báo thanh toán thành công
-  //   (xem PaymentService.markSuccess)
   async confirmOrder(
     orderId: string,
     sellerUserId: string,
@@ -248,7 +279,6 @@ export class OrdersService {
     });
   }
 
-  // FR-30: Seller chuyển sang "đang chuẩn bị hàng"
   async markPreparing(
     orderId: string,
     sellerUserId: string,
@@ -270,7 +300,6 @@ export class OrdersService {
     });
   }
 
-  // FR-30: Seller chuyển sang "đang giao"
   async markShipping(
     orderId: string,
     sellerUserId: string,
@@ -293,7 +322,6 @@ export class OrdersService {
     });
   }
 
-  // FR-30: Seller xác nhận "đã giao"
   async markDelivered(
     orderId: string,
     sellerUserId: string,
@@ -316,7 +344,6 @@ export class OrdersService {
     });
   }
 
-  // FR-30: đánh dấu "hoàn thành"
   async completeOrder(
     orderId: string,
     sellerUserId: string,
@@ -339,8 +366,6 @@ export class OrdersService {
     });
   }
 
-  // FR-30 / BR-08: Seller huỷ đơn (thường do hết hàng thực tế trước khi giao)
-  // BE-057: đồng bộ luôn Payment.status nếu đang PENDING
   async cancelOrder(
     orderId: string,
     sellerUserId: string,
@@ -359,9 +384,6 @@ export class OrdersService {
         OrderStatus.CONFIRMED,
       ]);
 
-      // Nếu đơn COD đã qua confirmOrder (status = CONFIRMED), tồn kho đã bị
-      // trừ thật (stockQty) -> phải cộng trả lại (restock).
-      // Ngược lại (chưa confirm), tồn kho vẫn ở dạng reserve -> chỉ release.
       const wasStockCommitted =
         order.paymentMethod === PaymentMethod.COD &&
         order.status === OrderStatus.CONFIRMED;
@@ -393,13 +415,6 @@ export class OrdersService {
     });
   }
 
-  // ==========================================================================
-  // BE-055 (FR-31): Customer theo dõi & huỷ đơn — BR-04
-  // ==========================================================================
-
-  // FR-31 / BR-04: Customer tự huỷ đơn — chỉ được khi đơn đang "Chờ xác nhận"
-  // (đơn COD chưa được Seller xác nhận). Sau khi Seller đã xác nhận hoặc
-  // đơn online đã thanh toán, việc huỷ phải qua yêu cầu hỗ trợ/khiếu nại.
   async cancelOrderByCustomer(
     orderId: string,
     userId: string,
@@ -430,9 +445,6 @@ export class OrdersService {
       }
 
       order.items = await manager.find(OrderItem, { where: { orderId } });
-
-      // Tại PENDING_CONFIRMATION, tồn kho luôn ở dạng reserve (chưa commit)
-      // với cả COD lẫn online -> chỉ cần release
       for (const item of order.items) {
         await this.productVariantService.releaseReservedStock(
           manager,
@@ -463,7 +475,6 @@ export class OrdersService {
     return orders.map((order) => this.toOrderResponse(order));
   }
 
-  // FR-31: Customer xem chi tiết 1 đơn (theo dõi trạng thái)
   async findById(id: string, userId: string): Promise<OrderResponseDto> {
     const order = await this.orderRepository.findOne({
       where: { id },
@@ -481,15 +492,6 @@ export class OrdersService {
     return this.toOrderResponse(order);
   }
 
-  // ==========================================================================
-  // BE-057: Đồng bộ Payment.status khi Order bị huỷ
-  // ==========================================================================
-
-  // Khi order bị huỷ (bởi customer hoặc seller), Payment liên quan phải được
-  // đồng bộ để tránh treo ở PENDING mãi mãi. Chỉ đồng bộ nếu Payment còn
-  // PENDING; nếu đã SUCCESS thì việc huỷ sau khi đã thanh toán cần xử lý
-  // hoàn tiền riêng (FR-46), không tự đổi status ở đây để tránh nhầm lẫn
-  // với luồng refund chính thức.
   private async syncPaymentStatusOnCancel(
     manager: EntityManager,
     orderId: string,
@@ -507,10 +509,6 @@ export class OrdersService {
       await manager.save(Payment, payment);
     }
   }
-
-  // ==========================================================================
-  // Seller: danh sách đơn theo shop
-  // ==========================================================================
 
   async getShopOrders(
     sellerId: string,
@@ -555,11 +553,6 @@ export class OrdersService {
     return new SellerOrderListResponseDto(items, meta);
   }
 
-  // ==========================================================================
-  // Helpers
-  // ==========================================================================
-
-  // lock order + xác thực order thuộc đúng shop của seller đang gọi
   private async lockOrderForSeller(
     manager: EntityManager,
     orderId: string,
@@ -586,7 +579,6 @@ export class OrdersService {
     return order;
   }
 
-  // BE-053: validate chuyển trạng thái hợp lệ, chặn nhảy cóc/đi lùi
   private assertTransition(
     current: OrderStatus,
     next: OrderStatus,
@@ -640,6 +632,7 @@ export class OrdersService {
       paymentMethod: order.paymentMethod,
       subtotalAmount: order.subtotalAmount,
       discountAmount: order.discountAmount,
+      voucherCode: order.voucherCode,
       shippingFee: order.shippingFee,
       totalAmount: order.totalAmount,
       items: (order.items ?? []).map(

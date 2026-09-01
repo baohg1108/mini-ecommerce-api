@@ -33,4 +33,9 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  voucherCode?: string;
 }
