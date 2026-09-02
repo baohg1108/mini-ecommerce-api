@@ -21,6 +21,7 @@ import { CartModule } from './modules/cart/cart.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { RefundRequestsModule } from './modules/refund-requests/refund-requests.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
 import { VouchersModule } from './modules/vouchers/vouchers.module';
 
 @Module({
@@ -54,6 +55,7 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     OrdersModule,
     PaymentModule,
     RefundRequestsModule,
+    ReviewsModule,
     VouchersModule,
   ],
   controllers: [ProductImageController],
