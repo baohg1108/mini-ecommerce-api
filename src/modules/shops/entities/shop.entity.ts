@@ -112,6 +112,13 @@ export class Shop {
   avgRating!: number;
 
   @Column({
+    name: 'review_count',
+    type: 'int',
+    default: 0,
+  })
+  reviewCount!: number;
+
+  @Column({
     name: 'approved_at',
     type: 'timestamptz',
     nullable: true,

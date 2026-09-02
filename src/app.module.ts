@@ -21,6 +21,7 @@ import { CartModule } from './modules/cart/cart.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { RefundRequestsModule } from './modules/refund-requests/refund-requests.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { RefundRequestsModule } from './modules/refund-requests/refund-requests.
     OrdersModule,
     PaymentModule,
     RefundRequestsModule,
+    ReviewsModule,
   ],
   controllers: [ProductImageController],
   providers: [
