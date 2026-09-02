@@ -9,6 +9,7 @@ import { Shop } from '../shops/entities/shop.entity';
 import { CartService } from '../cart/cart.service';
 import { PaymentService } from '../payment/payment.service';
 import { ProductVariantService } from '../product-variant/product-variant.service';
+import { VoucherValidationService } from '../vouchers/voucher-validation.service';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 
 describe('OrdersService - checkout transaction rollback', () => {
@@ -89,6 +90,16 @@ describe('OrdersService - checkout transaction rollback', () => {
         { provide: PaymentService, useValue: { createForOrder: jest.fn() } },
         { provide: ProductVariantService, useValue: {} },
         { provide: DataSource, useValue: mockDataSource },
+        // FR-43: OrdersService giờ inject thêm VoucherValidationService để
+        // validate/tính giảm giá voucher trong lúc checkout. Test này không
+        // dùng voucherCode nên chỉ cần mock rỗng để NestJS resolve được DI.
+        {
+          provide: VoucherValidationService,
+          useValue: {
+            validateVoucher: jest.fn(),
+            recordUsage: jest.fn(),
+          },
+        },
       ],
     }).compile();
 

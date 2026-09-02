@@ -11,6 +11,7 @@ export class OrderResponseDto {
   paymentMethod!: PaymentMethod;
   subtotalAmount!: string;
   discountAmount!: string;
+  voucherCode?: string;
   shippingFee!: string;
   totalAmount!: string;
   items!: OrderItemResponseDto[];
