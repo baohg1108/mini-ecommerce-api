@@ -33,6 +33,7 @@ import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { VoucherValidationService } from '../vouchers/voucher-validation.service';
 import { ShopVoucherAllocation } from '../vouchers/interfaces/voucher-validation-result.interface';
+import { AdminOrderQueryDto } from './dtos/admin-order-query.dto';
 
 @Injectable()
 export class OrdersService {
@@ -708,5 +709,50 @@ export class OrdersService {
         : undefined,
       createdAt: order.createdAt,
     });
+  }
+
+  async adminFindAll(query: AdminOrderQueryDto) {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      shopId,
+      userId,
+      fromDate,
+      toDate,
+      orderCode,
+    } = query;
+
+    const qb = this.orderRepository
+      .createQueryBuilder('order')
+      .leftJoinAndSelect('order.shop', 'shop')
+      .leftJoinAndSelect('order.user', 'user')
+      .leftJoinAndSelect('order.items', 'items')
+      .orderBy('order.createdAt', 'DESC');
+
+    if (status) qb.andWhere('order.status = :status', { status });
+    if (shopId) qb.andWhere('order.shopId = :shopId', { shopId });
+    if (userId) qb.andWhere('order.userId = :userId', { userId });
+    if (orderCode)
+      qb.andWhere('order.orderCode ILIKE :orderCode', {
+        orderCode: `%${orderCode}%`,
+      });
+    if (fromDate) qb.andWhere('order.createdAt >= :fromDate', { fromDate });
+    if (toDate) qb.andWhere('order.createdAt <= :toDate', { toDate });
+
+    const [data, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 }
