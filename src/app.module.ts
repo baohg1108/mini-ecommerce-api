@@ -23,6 +23,7 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { RefundRequestsModule } from './modules/refund-requests/refund-requests.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { VouchersModule } from './modules/vouchers/vouchers.module';
+import { StatisticsModule } from './modules/statistics/statistics.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     RefundRequestsModule,
     ReviewsModule,
     VouchersModule,
+    StatisticsModule,
   ],
   controllers: [ProductImageController],
   providers: [
