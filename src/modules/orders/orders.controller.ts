@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
@@ -19,6 +20,7 @@ import { Roles } from '../../common/decorators/role.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
 import { CancelOrderDto } from './dtos/cancel-order.dto';
+import { AdminOrderQueryDto } from './dtos/admin-order-query.dto';
 
 @Controller('orders')
 @UseGuards(AccessTokenGuard, RolesGuard)
@@ -143,5 +145,12 @@ export class OrdersController {
     @Body() dto: CancelOrderDto,
   ): Promise<OrderResponseDto> {
     return this.ordersService.cancelOrderByCustomer(id, userId, dto.reason);
+  }
+
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('admin/all')
+  adminFindAll(@Query() query: AdminOrderQueryDto) {
+    return this.ordersService.adminFindAll(query);
   }
 }

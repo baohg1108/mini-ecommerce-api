@@ -21,6 +21,7 @@ import { Roles } from '../../common/decorators/role.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { CurrentUserId } from '../../common/decorators/current-user-id.decorator';
 import { GroupedCartDto } from './dtos/grouped-cart.dto';
+import { AvailableVoucherResponseDto } from '../../modules/vouchers/dtos/available-voucher.response.dto';
 
 // only customer logged in can access Cart API
 @Controller('cart')
@@ -39,6 +40,14 @@ export class CartController {
   @HttpCode(HttpStatus.OK)
   getGroupedCart(@CurrentUserId() userId: string): Promise<GroupedCartDto[]> {
     return this.cartService.getGroupedCartForCheckout(userId);
+  }
+
+  @Get('available-vouchers')
+  @HttpCode(HttpStatus.OK)
+  getAvailableVouchers(
+    @CurrentUserId() userId: string,
+  ): Promise<AvailableVoucherResponseDto[]> {
+    return this.cartService.getAvailableVouchers(userId);
   }
 
   @Post('items')
