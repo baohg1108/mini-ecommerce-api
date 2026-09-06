@@ -6,7 +6,10 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
+  MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -19,6 +22,8 @@ export class VariantItemDto {
   @IsOptional()
   @IsNotEmpty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(100)
   sku!: string;
 
   @IsOptional()
@@ -27,12 +32,14 @@ export class VariantItemDto {
 
   @IsOptional()
   @IsNumber()
-  @Min(0)
+  @Min(1000)
+  @Max(100000000)
   price!: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1000000)
   stockQty!: number;
 
   @IsOptional()
