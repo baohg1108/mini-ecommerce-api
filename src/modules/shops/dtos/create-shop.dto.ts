@@ -13,9 +13,6 @@ export class CreateShopDto {
   @IsNotEmpty()
   @MinLength(3)
   @MaxLength(200)
-  // @Transform(({ value }) =>
-  //   typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value,
-  // )
   @Transform(({ value }: { value: unknown }) => {
     if (typeof value === 'string') {
       return value.trim();
@@ -26,26 +23,31 @@ export class CreateShopDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(10)
   @MaxLength(5000)
   description!: string | null;
 
   @IsOptional()
   @IsUrl()
+  @MinLength(10)
   @MaxLength(500)
   logoUrl!: string | null;
 
   @IsOptional()
   @IsUrl({})
+  @MinLength(10)
   @MaxLength(500)
   businessLicenseUrl!: string | null;
 
   @IsOptional()
   @IsString()
+  @MinLength(10)
   @MaxLength(5000)
   returnPolicy!: string | null;
 
   @IsOptional()
   @IsString()
+  @MinLength(10)
   @MaxLength(5000)
   shippingPolicy!: string | null;
 }
