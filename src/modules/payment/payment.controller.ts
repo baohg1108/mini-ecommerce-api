@@ -13,9 +13,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order } from '../orders/entities/order.entity';
@@ -37,7 +39,7 @@ import { CurrentUserId } from '../../common/decorators/current-user-id.decorator
 import { PaymentHistoryQueryDto } from './dtos/payment-history-query.dto';
 import { PaymentHistoryResponseDto } from './dtos/payment-history.response';
 
-@Controller('payments')
+@Controller(['payments', 'payment'])
 export class PaymentController {
   private readonly logger = new Logger(PaymentController.name);
 
@@ -45,6 +47,7 @@ export class PaymentController {
     private readonly paymentService: PaymentService,
     private readonly vnpayService: VnpayService,
     private readonly momoService: MomoService,
+    private readonly configService: ConfigService,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
   ) {}
@@ -133,6 +136,58 @@ export class PaymentController {
       payUrl: result.payUrl,
       qrCodeUrl: result.qrCodeUrl,
       deeplink: result.deeplink,
+    });
+  }
+
+  @IsPublic()
+  @Get('vnpay/return')
+  async handleVnpayReturn(
+    @Query() query: VnpayIpnDto,
+    @Req() req: Request,
+    @Res() response: Response,
+  ) {
+    const result = await this.handleVnpayIpn(query, req);
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') ??
+      'http://localhost:3001';
+    const status =
+      result.RspCode === '00'
+        ? 'success'
+        : query.vnp_ResponseCode === '24'
+          ? 'cancelled'
+          : 'failed';
+    const redirectUrl = new URL('/payment/success', frontendUrl);
+    redirectUrl.searchParams.set('payment', status);
+    if (query.vnp_TxnRef) {
+      redirectUrl.searchParams.set('order', query.vnp_TxnRef);
+    }
+    return response.redirect(redirectUrl.toString());
+  }
+
+  @Post(':orderId/mock-vnpay-success')
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER)
+  @HttpCode(HttpStatus.OK)
+  async mockVnpaySuccess(
+    @CurrentUserId() userId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+  ) {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: { payment: true },
+    });
+    if (!order || order.userId !== userId) {
+      throw new NotFoundException('Order not found');
+    }
+    if (order.paymentMethod !== PaymentMethod.VNPAY) {
+      throw new BadRequestException(
+        'Mock QR is only available for VNPay orders',
+      );
+    }
+    return this.paymentService.markSuccessByOrderId(orderId, {
+      gatewayTxnId: `MOCK-VNPAY-${Date.now()}`,
+      gatewayResponseCode: '00',
+      rawCallbackPayload: { simulated: true },
     });
   }
 
