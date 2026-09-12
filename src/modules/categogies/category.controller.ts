@@ -11,9 +11,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CategoryService } from './category.service';
-import { CreateCategoryDto } from './dtos/create.category.dto';
+import { CreateCategoryDto } from './dtos/create-category.dto';
 import { UpdateCategoryDto } from './dtos/update-category.dto';
-import { MoveCategoryDto } from './dtos/move-category';
+import { MoveCategoryDto } from './dtos/move-category.dto';
 import { CategoryQueryDto } from '../../common/dtos/category-query.dto';
 import { CategoryResponseDto } from './dtos/category.response.dto';
 import { CategoryTreeNode } from './category.service';
