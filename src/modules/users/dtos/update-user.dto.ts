@@ -4,7 +4,7 @@ import {
   IsOptional,
   MinLength,
   MaxLength,
-  IsPhoneNumber,
+  // IsPhoneNumber,
   IsUrl,
 } from 'class-validator';
 
@@ -29,7 +29,7 @@ export class UpdateUserDto {
   @IsString()
   @MinLength(8, { message: 'Phone number must be at least 8 characters long' })
   @MaxLength(20, { message: 'Phone number must not exceed 20 characters' })
-  @IsPhoneNumber(undefined, { message: 'Invalid phone number format' })
+  // @IsPhoneNumber(undefined, { message: 'Invalid phone number format' })
   phone?: string;
 
   @IsOptional()
