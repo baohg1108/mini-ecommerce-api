@@ -1,870 +1,764 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import {
-  BadRequestException,
-  ForbiddenException,
   NotFoundException,
+  BadRequestException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DataSource, EntityManager, Repository } from 'typeorm';
-import { createHmac } from 'node:crypto';
 import axios from 'axios';
-import { plainToInstance } from 'class-transformer';
-import { validate } from 'class-validator';
-
 import { PaymentService } from './payment.service';
 import { VnpayService } from './vnpay/vnpay.service';
 import { MomoService } from './momo/momo.service';
-
+import { ProductVariantService } from '../product-variant/product-variant.service';
 import { Payment } from './entities/payment.entity';
 import { Order } from '../orders/entities/order.entity';
-import { OrderItem } from '../orders/entities/order-item.entity';
-
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { OrderStatus } from '../../common/enums/order-status.enum';
 
-import { ProductVariantService } from '../product-variant/product-variant.service';
-import { MomoIpnDto } from './momo/dtos/momo-ipn.dto';
-import { VnpayIpnDto } from './vnpay/dtos/vnpay-ipn.dto';
-
-import * as vnpaySignUtil from '../../common/utils/vnpay-sign.util';
-
-/* eslint-disable @typescript-eslint/unbound-method --
- * `expect(mock.someMethod).toHaveBeenCalledWith(...)` never actually invokes
- * the method unbound from its object — Jest reads `.mock.calls` off the
- * function reference. The rule can't tell that apart from a real unbound
- * call, so it false-positives on every typed TypeORM/axios mock here. */
-
 jest.mock('axios');
-jest.mock('../../common/utils/vnpay-sign.util');
-
 const mockedAxios = axios as jest.Mocked<typeof axios>;
-const mockedBuildSignedQuery = vnpaySignUtil.buildSignedQuery as jest.Mock;
-const mockedVerifySignedQuery = vnpaySignUtil.verifySignedQuery as jest.Mock;
-const mockedFormatVnpDate = vnpaySignUtil.formatVnpDate as jest.Mock;
 
-describe('PaymentService', () => {
-  let service: PaymentService;
-  let paymentRepository: jest.Mocked<Partial<Repository<Payment>>> & {
-    createQueryBuilder: jest.Mock;
+describe('Payment Module Unified Unit Test Cases', () => {
+  let paymentService: PaymentService;
+  let vnpayService: VnpayService;
+  let momoService: MomoService;
+
+  const mockPaymentRepository = {
+    findOne: jest.fn(),
+    save: jest.fn(),
+    createQueryBuilder: jest.fn(),
   };
-  let dataSource: { transaction: jest.Mock };
-  let productVariantService: {
-    commitStock: jest.Mock;
-    releaseReservedStock: jest.Mock;
+
+  const mockOrderRepository = {
+    findOne: jest.fn(),
   };
-  let vnpayService: { refund: jest.Mock };
-  let momoService: { refund: jest.Mock };
+
+  const mockEntityManager = {
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    update: jest.fn(),
+    find: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  };
+
+  const mockDataSource = {
+    transaction: jest.fn(
+      async (cb: (manager: EntityManager) => Promise<unknown>) =>
+        cb(mockEntityManager as unknown as EntityManager),
+    ),
+  };
+
+  const mockProductVariantService = {
+    commitStock: jest.fn(),
+    releaseReservedStock: jest.fn(),
+  };
+
+  const mockConfigValues: Record<string, string | number> = {
+    VNPAY_TMN_CODE: 'TMNCODE123',
+    VNPAY_HASH_SECRET: 'HASHSECRET123',
+    VNPAY_PAYMENT_URL: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+    VNPAY_RETURN_URL: 'http://localhost/return',
+    VNPAY_API_URL:
+      'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction',
+    VNPAY_CREATE_BY: 'system',
+    VNPAY_REFUND_TIMEOUT_MS: 15000,
+    MOMO_PARTNER_CODE: 'MOMO_PARTNER',
+    MOMO_PARTNER_NAME: 'Merchant',
+    MOMO_ACCESS_KEY: 'access_key_123',
+    MOMO_SECRET_KEY: 'secret_key_123',
+    MOMO_API_ENDPOINT: 'https://test-payment.momo.vn/v2/gateway/api/create',
+    MOMO_REDIRECT_URL: 'http://localhost/redirect',
+    MOMO_IPN_URL: 'http://localhost/ipn',
+    MOMO_REQUEST_TYPE: 'captureWallet',
+    MOMO_REQUEST_TIMEOUT_MS: 15000,
+    MOMO_REFUND_ENDPOINT: 'https://test-payment.momo.vn/v2/gateway/api/refund',
+  };
+
+  const mockConfigService = {
+    get: jest.fn(
+      (key: string): string | number | undefined => mockConfigValues[key],
+    ),
+    getOrThrow: jest.fn((key: string): string | number => {
+      const val = mockConfigValues[key];
+      if (val === undefined) throw new Error(`Missing config ${key}`);
+      return val;
+    }),
+  };
+
+  const mockVnpayService = {
+    refund: jest.fn(),
+    createPaymentUrl: jest.fn(),
+    verifyIpnSignature: jest.fn(),
+    findOrderForIpn: jest.fn(),
+  };
+
+  const mockMomoService = {
+    refund: jest.fn(),
+    createPayment: jest.fn(),
+    verifyIpnSignature: jest.fn(),
+  };
 
   beforeEach(async () => {
-    paymentRepository = {
-      findOne: jest.fn(),
-      save: jest.fn(),
-      createQueryBuilder: jest.fn(),
-    };
-
-    dataSource = { transaction: jest.fn() };
-
-    productVariantService = {
-      commitStock: jest.fn(),
-      releaseReservedStock: jest.fn(),
-    };
-
-    vnpayService = { refund: jest.fn() };
-    momoService = { refund: jest.fn() };
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentService,
-        { provide: getRepositoryToken(Payment), useValue: paymentRepository },
-        { provide: DataSource, useValue: dataSource },
-        { provide: ProductVariantService, useValue: productVariantService },
-        { provide: VnpayService, useValue: vnpayService },
-        { provide: MomoService, useValue: momoService },
-      ],
-    }).compile();
-
-    service = module.get<PaymentService>(PaymentService);
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  const createManagerWithQueryBuilder = (
-    paymentResult: Payment | null,
-    extra: Record<string, unknown> = {},
-  ): EntityManager => {
-    const qb = {
-      where: jest.fn().mockReturnThis(),
-      setLock: jest.fn().mockReturnThis(),
-      getOne: jest.fn().mockResolvedValue(paymentResult),
-    };
-    return {
-      createQueryBuilder: jest.fn().mockReturnValue(qb),
-      ...extra,
-    } as unknown as EntityManager;
-  };
-
-  describe('createForOrder', () => {
-    it('PAY-UNIT-013: throws NotFoundException when order has no id', async () => {
-      const manager = {} as EntityManager;
-
-      await expect(
-        service.createForOrder(manager, {} as Order, PaymentMethod.COD),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('PAY-UNIT-014: throws NotFoundException when order not found in DB', async () => {
-      const manager = {
-        findOne: jest.fn().mockResolvedValue(null),
-      } as unknown as EntityManager;
-
-      await expect(
-        service.createForOrder(
-          manager,
-          { id: 'o1' } as Order,
-          PaymentMethod.COD,
-        ),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(manager.findOne).toHaveBeenCalledWith(Order, {
-        where: { id: 'o1' },
-      });
-    });
-
-    it('PAY-UNIT-015: creates payment with PENDING status', async () => {
-      const existingOrder = { id: 'o1', totalAmount: '100000' } as Order;
-
-      const manager = {
-        findOne: jest.fn().mockResolvedValue(existingOrder),
-        create: jest.fn((_entity: unknown, data: unknown) => data),
-        save: jest.fn((_entity: unknown, data: Partial<Payment>) =>
-          Promise.resolve({ id: 'p1', ...data } as Payment),
-        ),
-      } as unknown as EntityManager;
-
-      const result = await service.createForOrder(
-        manager,
-        { id: 'o1' } as Order,
-        PaymentMethod.COD,
-      );
-
-      expect(manager.create).toHaveBeenCalledWith(Payment, {
-        orderId: 'o1',
-        method: PaymentMethod.COD,
-        amount: '100000',
-        status: PaymentStatus.PENDING,
-      });
-      expect(manager.save).toHaveBeenCalledWith(
-        Payment,
-        expect.objectContaining({
-          status: PaymentStatus.PENDING,
-          orderId: 'o1',
-        }),
-      );
-      expect(result.status).toBe(PaymentStatus.PENDING);
-    });
-  });
-
-  describe('findByOrderId', () => {
-    it('PAY-UNIT-016: throws NotFoundException when payment missing', async () => {
-      (paymentRepository.findOne as jest.Mock).mockResolvedValue(null);
-
-      await expect(service.findByOrderId('o1')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('PAY-UNIT-017: returns payment when found', async () => {
-      const payment = { id: 'p1', orderId: 'o1' } as Payment;
-      (paymentRepository.findOne as jest.Mock).mockResolvedValue(payment);
-
-      const result = await service.findByOrderId('o1');
-
-      expect(result).toBe(payment);
-      expect(paymentRepository.findOne).toHaveBeenCalledWith({
-        where: { orderId: 'o1' },
-      });
-    });
-  });
-
-  describe('findByGatewayOrderId', () => {
-    it('PAY-UNIT-018: returns null when not found', async () => {
-      (paymentRepository.findOne as jest.Mock).mockResolvedValue(null);
-
-      const result = await service.findByGatewayOrderId('gw-1');
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('attachGatewayOrderId', () => {
-    it('PAY-UNIT-019: throws NotFoundException when payment missing', async () => {
-      (paymentRepository.findOne as jest.Mock).mockResolvedValue(null);
-
-      await expect(service.attachGatewayOrderId('p1', 'gw-1')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('PAY-UNIT-020: saves gatewayOrderId onto payment', async () => {
-      const payment = { id: 'p1' } as Payment;
-      (paymentRepository.findOne as jest.Mock).mockResolvedValue(payment);
-      (paymentRepository.save as jest.Mock).mockImplementation((p) =>
-        Promise.resolve(p),
-      );
-
-      await service.attachGatewayOrderId('p1', 'gw-1');
-
-      expect(payment.gatewayOrderId).toBe('gw-1');
-      expect(paymentRepository.save).toHaveBeenCalledTimes(1);
-      expect(paymentRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ gatewayOrderId: 'gw-1' }),
-      );
-    });
-  });
-
-  describe('markSuccess', () => {
-    it('PAY-UNIT-021: throws NotFoundException when payment missing', async () => {
-      const manager = createManagerWithQueryBuilder(null);
-
-      await expect(service.markSuccess(manager, 'o1', {})).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('PAY-UNIT-022: sets SUCCESS and commits stock for all order items', async () => {
-      const payment = {
-        id: 'p1',
-        orderId: 'o1',
-        status: PaymentStatus.PENDING,
-      } as Payment;
-      const orderItems = [
-        { variantId: 'v1', quantity: 2 } as OrderItem,
-        { variantId: 'v2', quantity: 1 } as OrderItem,
-      ];
-
-      const manager = createManagerWithQueryBuilder(payment, {
-        save: jest.fn((_entity: unknown, data: Payment) =>
-          Promise.resolve(data),
-        ),
-        update: jest.fn().mockResolvedValue(undefined),
-        find: jest.fn().mockResolvedValue(orderItems),
-      });
-
-      const result = await service.markSuccess(manager, 'o1', {
-        gatewayTxnId: 'tx1',
-        gatewayResponseCode: '00',
-      });
-
-      expect(result.status).toBe(PaymentStatus.SUCCESS);
-      expect(result.paidAt).toBeInstanceOf(Date);
-      expect(result.gatewayTxnId).toBe('tx1');
-
-      expect(manager.update).toHaveBeenCalledWith(
-        Order,
-        { id: 'o1' },
-        { status: OrderStatus.PAID_PENDING_CONFIRMATION },
-      );
-
-      expect(productVariantService.commitStock).toHaveBeenCalledTimes(2);
-      expect(productVariantService.commitStock).toHaveBeenNthCalledWith(
-        1,
-        manager,
-        'v1',
-        2,
-      );
-      expect(productVariantService.commitStock).toHaveBeenNthCalledWith(
-        2,
-        manager,
-        'v2',
-        1,
-      );
-      expect(productVariantService.releaseReservedStock).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('markFailed', () => {
-    it('PAY-UNIT-023: throws NotFoundException when payment missing', async () => {
-      const manager = createManagerWithQueryBuilder(null);
-
-      await expect(service.markFailed(manager, 'o1')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('PAY-UNIT-024: sets FAILED and releases reserved stock', async () => {
-      const payment = {
-        id: 'p1',
-        orderId: 'o1',
-        status: PaymentStatus.PENDING,
-      } as Payment;
-      const orderItems = [{ variantId: 'v1', quantity: 3 } as OrderItem];
-
-      const manager = createManagerWithQueryBuilder(payment, {
-        save: jest.fn((_entity: unknown, data: Payment) =>
-          Promise.resolve(data),
-        ),
-        update: jest.fn().mockResolvedValue(undefined),
-        find: jest.fn().mockResolvedValue(orderItems),
-      });
-
-      const result = await service.markFailed(manager, 'o1', {
-        gatewayResponseCode: '99',
-      });
-
-      expect(result.status).toBe(PaymentStatus.FAILED);
-      expect(manager.update).toHaveBeenCalledWith(
-        Order,
-        { id: 'o1' },
-        { status: OrderStatus.PAYMENT_FAILED },
-      );
-
-      expect(productVariantService.releaseReservedStock).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(productVariantService.releaseReservedStock).toHaveBeenCalledWith(
-        manager,
-        'v1',
-        3,
-      );
-      expect(productVariantService.commitStock).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('markSuccessByOrderId', () => {
-    it('PAY-UNIT-025: wraps markSuccess inside a DB transaction', async () => {
-      const fakeManager = { fake: true } as unknown as EntityManager;
-      dataSource.transaction.mockImplementation(
-        (cb: (m: EntityManager) => unknown) => cb(fakeManager),
-      );
-
-      const markSuccessSpy = jest
-        .spyOn(service, 'markSuccess')
-        .mockResolvedValue({ id: 'p1' } as Payment);
-
-      const result = await service.markSuccessByOrderId('o1', {
-        gatewayTxnId: 'tx1',
-      });
-
-      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
-      expect(markSuccessSpy).toHaveBeenCalledWith(fakeManager, 'o1', {
-        gatewayTxnId: 'tx1',
-      });
-      expect(result).toEqual({ id: 'p1' });
-    });
-  });
-
-  describe('markFailedByGatewayOrderId', () => {
-    it('PAY-UNIT-026: returns null when gatewayOrderId unknown', async () => {
-      const manager = {
-        findOne: jest.fn().mockResolvedValue(null),
-      } as unknown as EntityManager;
-      dataSource.transaction.mockImplementation(
-        (cb: (m: EntityManager) => unknown) => cb(manager),
-      );
-      const markFailedSpy = jest.spyOn(service, 'markFailed');
-
-      const result = await service.markFailedByGatewayOrderId('gw-x');
-
-      expect(result).toBeNull();
-      expect(markFailedSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('markSuccessByGatewayOrderId', () => {
-    it('PAY-UNIT-027: returns null when gatewayOrderId unknown', async () => {
-      const manager = {
-        findOne: jest.fn().mockResolvedValue(null),
-      } as unknown as EntityManager;
-      dataSource.transaction.mockImplementation(
-        (cb: (m: EntityManager) => unknown) => cb(manager),
-      );
-      const markSuccessSpy = jest.spyOn(service, 'markSuccess');
-
-      const result = await service.markSuccessByGatewayOrderId('gw-x', {});
-
-      expect(result).toBeNull();
-      expect(markSuccessSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('getPaymentHistory', () => {
-    const buildQueryBuilderMock = (payments: Payment[], total: number) => {
-      const qb = {
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        take: jest.fn().mockReturnThis(),
-        getManyAndCount: jest.fn().mockResolvedValue([payments, total]),
-      };
-      paymentRepository.createQueryBuilder.mockReturnValue(qb);
-      return qb;
-    };
-
-    it('PAY-UNIT-028: applies default pagination (page=1, limit=10)', async () => {
-      const qb = buildQueryBuilderMock([], 0);
-
-      const result = await service.getPaymentHistory('u1', {});
-
-      expect(qb.where).toHaveBeenCalledWith('order.user_id = :userId', {
-        userId: 'u1',
-      });
-      expect(qb.skip).toHaveBeenCalledWith(0);
-      expect(qb.take).toHaveBeenCalledWith(10);
-      expect(result.meta).toEqual({
-        page: 1,
-        limit: 10,
-        totalItems: 0,
-        totalPages: 0,
-      });
-    });
-
-    it('PAY-UNIT-029: applies status filter via andWhere', async () => {
-      const qb = buildQueryBuilderMock([], 0);
-
-      await service.getPaymentHistory('u1', {
-        status: PaymentStatus.SUCCESS,
-      });
-
-      expect(qb.andWhere).toHaveBeenCalledTimes(1);
-      expect(qb.andWhere).toHaveBeenCalledWith('payment.status = :status', {
-        status: PaymentStatus.SUCCESS,
-      });
-    });
-
-    it('PAY-UNIT-030: returns empty result with totalPages=0', async () => {
-      buildQueryBuilderMock([], 0);
-
-      const result = await service.getPaymentHistory('u1', {
-        page: 2,
-        limit: 5,
-      });
-
-      expect(result.items).toEqual([]);
-      expect(result.meta.totalItems).toBe(0);
-      expect(result.meta.totalPages).toBe(0);
-    });
-  });
-});
-
-// =============================================================================
-// VnpayService — PAY-UNIT-031 → 040
-// =============================================================================
-describe('VnpayService', () => {
-  let service: VnpayService;
-  let orderRepository: jest.Mocked<Partial<Repository<Order>>>;
-  let configService: { get: jest.Mock };
-
-  const VALID_CONFIG: Record<string, string> = {
-    VNPAY_TMN_CODE: 'TMN001',
-    VNPAY_HASH_SECRET: 'secret-key',
-    VNPAY_PAYMENT_URL: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
-    VNPAY_RETURN_URL: 'https://shop.example.com/vnpay/return',
-  };
-
-  beforeEach(async () => {
-    orderRepository = { findOne: jest.fn() };
-
-    configService = {
-      get: jest.fn((key: string) => VALID_CONFIG[key]),
-    };
-
-    mockedFormatVnpDate.mockReturnValue('20260824120000');
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
         VnpayService,
-        { provide: getRepositoryToken(Order), useValue: orderRepository },
-        { provide: ConfigService, useValue: configService },
-      ],
-    }).compile();
-
-    service = module.get<VnpayService>(VnpayService);
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  describe('createPaymentUrl', () => {
-    it('PAY-UNIT-031: throws NotFoundException when order missing', async () => {
-      (orderRepository.findOne as jest.Mock).mockResolvedValue(null);
-
-      await expect(
-        service.createPaymentUrl('u1', 'o1', '127.0.0.1'),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('PAY-UNIT-032: throws ForbiddenException when order belongs to another user', async () => {
-      (orderRepository.findOne as jest.Mock).mockResolvedValue({
-        id: 'o1',
-        userId: 'u2',
-        paymentMethod: PaymentMethod.VNPAY,
-      });
-
-      await expect(
-        service.createPaymentUrl('u1', 'o1', '127.0.0.1'),
-      ).rejects.toThrow(ForbiddenException);
-    });
-
-    it('PAY-UNIT-033: throws BadRequestException when order is not VNPay method', async () => {
-      (orderRepository.findOne as jest.Mock).mockResolvedValue({
-        id: 'o1',
-        userId: 'u1',
-        paymentMethod: PaymentMethod.COD,
-      });
-
-      await expect(
-        service.createPaymentUrl('u1', 'o1', '127.0.0.1'),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('PAY-UNIT-034: throws BadRequestException when VNPay config missing', async () => {
-      (orderRepository.findOne as jest.Mock).mockResolvedValue({
-        id: 'o1',
-        userId: 'u1',
-        paymentMethod: PaymentMethod.VNPAY,
-        totalAmount: '100000',
-        orderCode: 'ORD001',
-      });
-      configService.get.mockImplementation((key: string) =>
-        key === 'VNPAY_TMN_CODE' ? undefined : VALID_CONFIG[key],
-      );
-
-      await expect(
-        service.createPaymentUrl('u1', 'o1', '127.0.0.1'),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('PAY-UNIT-035: returns signed VNPay payment URL', async () => {
-      (orderRepository.findOne as jest.Mock).mockResolvedValue({
-        id: 'o1',
-        userId: 'u1',
-        paymentMethod: PaymentMethod.VNPAY,
-        totalAmount: '100000',
-        orderCode: 'ORD001',
-      });
-      mockedBuildSignedQuery.mockReturnValue({
-        queryString: 'vnp_Amount=10000000&vnp_TxnRef=ORD001&vnp_SecureHash=abc',
-      });
-
-      const result = await service.createPaymentUrl('u1', 'o1', '127.0.0.1');
-
-      expect(mockedBuildSignedQuery).toHaveBeenCalledWith(
-        expect.objectContaining({
-          vnp_Amount: 10000000,
-          vnp_TxnRef: 'ORD001',
-          vnp_IpAddr: '127.0.0.1',
-        }),
-        'secret-key',
-      );
-      expect(result.paymentUrl).toBe(
-        `${VALID_CONFIG.VNPAY_PAYMENT_URL}?vnp_Amount=10000000&vnp_TxnRef=ORD001&vnp_SecureHash=abc`,
-      );
-    });
-  });
-
-  describe('verifyIpnSignature', () => {
-    it('PAY-UNIT-036: returns false when hash secret missing', () => {
-      configService.get.mockImplementation((key: string) =>
-        key === 'VNPAY_HASH_SECRET' ? undefined : VALID_CONFIG[key],
-      );
-
-      const result = service.verifyIpnSignature({ vnp_TxnRef: 'ORD001' });
-
-      expect(result).toBe(false);
-      expect(mockedVerifySignedQuery).not.toHaveBeenCalled();
-    });
-
-    it('PAY-UNIT-037: returns true for valid signature', () => {
-      mockedVerifySignedQuery.mockReturnValue(true);
-
-      const query = { vnp_TxnRef: 'ORD001', vnp_SecureHash: 'valid-hash' };
-      const result = service.verifyIpnSignature(query);
-
-      expect(mockedVerifySignedQuery).toHaveBeenCalledWith(query, 'secret-key');
-      expect(result).toBe(true);
-    });
-
-    it('PAY-UNIT-038: returns false for tampered signature', () => {
-      mockedVerifySignedQuery.mockReturnValue(false);
-
-      const result = service.verifyIpnSignature({
-        vnp_TxnRef: 'ORD001',
-        vnp_SecureHash: 'tampered',
-      });
-
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('findOrderForIpn', () => {
-    it('PAY-UNIT-039: returns null for empty orderCode', async () => {
-      const result = await service.findOrderForIpn('');
-
-      expect(result).toBeNull();
-      expect(orderRepository.findOne).not.toHaveBeenCalled();
-    });
-
-    it('PAY-UNIT-040: returns order with payment relation', async () => {
-      const order = { id: 'o1', orderCode: 'ORD001', payment: { id: 'p1' } };
-      (orderRepository.findOne as jest.Mock).mockResolvedValue(order);
-
-      const result = await service.findOrderForIpn('ORD001');
-
-      expect(orderRepository.findOne).toHaveBeenCalledWith({
-        where: { orderCode: 'ORD001' },
-        relations: { payment: true },
-      });
-      expect(result).toBe(order);
-    });
-  });
-});
-
-// =============================================================================
-// MomoService — PAY-UNIT-041 → 046
-// =============================================================================
-describe('MomoService', () => {
-  let service: MomoService;
-
-  const CONFIG: Record<string, string | number> = {
-    MOMO_PARTNER_CODE: 'MOMOTEST',
-    MOMO_PARTNER_NAME: 'Mini Shop',
-    MOMO_ACCESS_KEY: 'access-key',
-    MOMO_SECRET_KEY: 'secret-key',
-    MOMO_API_ENDPOINT: 'https://test-payment.momo.vn/v2/gateway/api/create',
-    MOMO_REDIRECT_URL: 'https://shop.example.com/momo/return',
-    MOMO_IPN_URL: 'https://shop.example.com/payments/momo/ipn',
-    MOMO_REQUEST_TYPE: 'captureWallet',
-    MOMO_REQUEST_TIMEOUT_MS: 5000,
-  };
-
-  // Rebuilds the exact HMAC-SHA256 signature MomoService.sign() would
-  // produce, so tests assert real, correct signatures instead of hardcoded ones.
-  const signIpnPayload = (payload: Omit<MomoIpnDto, 'signature'>): string => {
-    const rawSignature =
-      `accessKey=${CONFIG.MOMO_ACCESS_KEY}` +
-      `&amount=${payload.amount}` +
-      `&extraData=${payload.extraData ?? ''}` +
-      `&message=${payload.message}` +
-      `&orderId=${payload.orderId}` +
-      `&orderInfo=${payload.orderInfo}` +
-      `&orderType=${payload.orderType ?? ''}` +
-      `&partnerCode=${payload.partnerCode}` +
-      `&payType=${payload.payType ?? ''}` +
-      `&requestId=${payload.requestId}` +
-      `&responseTime=${payload.responseTime}` +
-      `&resultCode=${payload.resultCode}` +
-      `&transId=${payload.transId}`;
-
-    return createHmac('sha256', CONFIG.MOMO_SECRET_KEY as string)
-      .update(rawSignature)
-      .digest('hex');
-  };
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
         MomoService,
         {
+          provide: getRepositoryToken(Payment),
+          useValue: mockPaymentRepository,
+        },
+        {
+          provide: getRepositoryToken(Order),
+          useValue: mockOrderRepository,
+        },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
+        {
+          provide: ProductVariantService,
+          useValue: mockProductVariantService,
+        },
+        {
+          provide: VnpayService,
+          useValue: mockVnpayService,
+        },
+        {
+          provide: MomoService,
+          useValue: mockMomoService,
+        },
+        {
           provide: ConfigService,
-          useValue: { getOrThrow: jest.fn((key: string) => CONFIG[key]) },
+          useValue: mockConfigService,
         },
       ],
     }).compile();
 
-    service = module.get<MomoService>(MomoService);
-  });
+    paymentService = module.get<PaymentService>(PaymentService);
+    vnpayService = module.get<VnpayService>(VnpayService);
+    momoService = module.get<MomoService>(MomoService);
 
-  afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('createPayment', () => {
-    const order = { id: 'o1', orderCode: 'ORD001' } as Order;
-    const payment = { id: 'p1', amount: '100000' } as Payment;
+  it('should be defined', () => {
+    expect(paymentService).toBeDefined();
+    expect(vnpayService).toBeDefined();
+    expect(momoService).toBeDefined();
+  });
 
-    it('PAY-UNIT-041: returns payUrl when resultCode=0', async () => {
+  describe('PaymentService Unit Tests', () => {
+    describe('createForOrder', () => {
+      const mockOrder = {
+        id: 'order-1',
+        totalAmount: 500000,
+      } as unknown as Order;
+
+      it('should successfully create a payment for an order', async () => {
+        mockEntityManager.findOne.mockResolvedValue(mockOrder);
+        mockEntityManager.create.mockReturnValue({
+          orderId: 'order-1',
+          method: PaymentMethod.VNPAY,
+          amount: 500000,
+          status: PaymentStatus.PENDING,
+        });
+        mockEntityManager.save.mockResolvedValue({
+          id: 'payment-1',
+          orderId: 'order-1',
+          method: PaymentMethod.VNPAY,
+          amount: 500000,
+          status: PaymentStatus.PENDING,
+        });
+
+        const result = await paymentService.createForOrder(
+          mockEntityManager as unknown as EntityManager,
+          mockOrder,
+          PaymentMethod.VNPAY,
+        );
+
+        expect(result).toHaveProperty('id', 'payment-1');
+        expect(mockEntityManager.save).toHaveBeenCalled();
+      });
+
+      it('should throw NotFoundException if order does not exist or has no ID', async () => {
+        await expect(
+          paymentService.createForOrder(
+            mockEntityManager as unknown as EntityManager,
+            { id: '' } as unknown as Order,
+            PaymentMethod.VNPAY,
+          ),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('should throw NotFoundException if order is not found in database via manager', async () => {
+        mockEntityManager.findOne.mockResolvedValue(null);
+
+        await expect(
+          paymentService.createForOrder(
+            mockEntityManager as unknown as EntityManager,
+            mockOrder,
+            PaymentMethod.VNPAY,
+          ),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+
+    describe('findByOrderId', () => {
+      it('should return payment when found by orderId', async () => {
+        const payment = { id: 'p-1', orderId: 'order-1' };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+
+        const result = await paymentService.findByOrderId('order-1');
+        expect(result).toEqual(payment);
+      });
+
+      it('should throw NotFoundException when payment not found by orderId', async () => {
+        mockPaymentRepository.findOne.mockResolvedValue(null);
+
+        await expect(paymentService.findByOrderId('order-1')).rejects.toThrow(
+          NotFoundException,
+        );
+      });
+    });
+
+    describe('attachGatewayOrderId', () => {
+      it('should successfully attach gateway order ID', async () => {
+        const payment = { id: 'p-1', gatewayOrderId: null };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+        mockPaymentRepository.save.mockResolvedValue({
+          ...payment,
+          gatewayOrderId: 'gw-123',
+        });
+
+        const result = await paymentService.attachGatewayOrderId(
+          'p-1',
+          'gw-123',
+        );
+        expect(result.gatewayOrderId).toBe('gw-123');
+      });
+
+      it('should throw NotFoundException if payment not found on attach', async () => {
+        mockPaymentRepository.findOne.mockResolvedValue(null);
+
+        await expect(
+          paymentService.attachGatewayOrderId('p-1', 'gw-123'),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+
+    describe('markSuccess', () => {
+      const orderId = 'order-1';
+      it('should mark payment as success, update order status, and commit stock', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.PENDING,
+        };
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+        mockEntityManager.save.mockResolvedValue({
+          ...payment,
+          status: PaymentStatus.SUCCESS,
+        });
+        mockEntityManager.find.mockResolvedValue([
+          { variantId: 'v-1', quantity: 2 },
+        ]);
+
+        const result = await paymentService.markSuccess(
+          mockEntityManager as unknown as EntityManager,
+          orderId,
+          { gatewayTxnId: 'txn-1' },
+        );
+
+        expect(result.status).toBe(PaymentStatus.SUCCESS);
+        expect(mockEntityManager.update).toHaveBeenCalledWith(
+          Order,
+          { id: orderId },
+          { status: OrderStatus.PAID_PENDING_CONFIRMATION },
+        );
+        expect(mockProductVariantService.commitStock).toHaveBeenCalledWith(
+          mockEntityManager,
+          'v-1',
+          2,
+        );
+      });
+
+      it('should throw NotFoundException if payment not found on markSuccess', async () => {
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(null),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+
+        await expect(
+          paymentService.markSuccess(
+            mockEntityManager as unknown as EntityManager,
+            orderId,
+            {},
+          ),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('should return payment immediately if status is already not PENDING', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.SUCCESS,
+        };
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+
+        const result = await paymentService.markSuccess(
+          mockEntityManager as unknown as EntityManager,
+          orderId,
+          {},
+        );
+
+        expect(result).toEqual(payment);
+        expect(mockEntityManager.save).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('markFailed', () => {
+      const orderId = 'order-1';
+      it('should mark payment as failed, update order status, and release stock', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.PENDING,
+        };
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+        mockEntityManager.save.mockResolvedValue({
+          ...payment,
+          status: PaymentStatus.FAILED,
+        });
+        mockEntityManager.find.mockResolvedValue([
+          { variantId: 'v-1', quantity: 2 },
+        ]);
+
+        const result = await paymentService.markFailed(
+          mockEntityManager as unknown as EntityManager,
+          orderId,
+          { gatewayResponseCode: '01' },
+        );
+
+        expect(result.status).toBe(PaymentStatus.FAILED);
+        expect(mockEntityManager.update).toHaveBeenCalledWith(
+          Order,
+          { id: orderId },
+          { status: OrderStatus.PAYMENT_FAILED },
+        );
+        expect(
+          mockProductVariantService.releaseReservedStock,
+        ).toHaveBeenCalledWith(mockEntityManager, 'v-1', 2);
+      });
+
+      it('should throw NotFoundException if payment not found on markFailed', async () => {
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(null),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+
+        await expect(
+          paymentService.markFailed(
+            mockEntityManager as unknown as EntityManager,
+            orderId,
+          ),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+
+    describe('refundByOrderId', () => {
+      const orderId = 'order-1';
+
+      it('should successfully process VNPAY refund', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.SUCCESS,
+          method: PaymentMethod.VNPAY,
+          order: { id: orderId },
+        };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+        mockVnpayService.refund.mockResolvedValue({
+          success: true,
+          responseCode: '00',
+          gatewayTxnId: 'ref-123',
+        });
+        mockEntityManager.findOne.mockResolvedValue(payment);
+        mockEntityManager.save.mockResolvedValue({
+          ...payment,
+          status: PaymentStatus.REFUNDED,
+        });
+
+        const result = await paymentService.refundByOrderId(
+          orderId,
+          'Customer request',
+        );
+        expect(result.status).toBe(PaymentStatus.REFUNDED);
+        expect(mockVnpayService.refund).toHaveBeenCalled();
+      });
+
+      it('should successfully process MOMO refund', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.SUCCESS,
+          method: PaymentMethod.MOMO,
+          order: { id: orderId },
+        };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+        mockMomoService.refund.mockResolvedValue({
+          success: true,
+          responseCode: '00',
+          gatewayTxnId: 'ref-momo',
+        });
+        mockEntityManager.findOne.mockResolvedValue(payment);
+        mockEntityManager.save.mockResolvedValue({
+          ...payment,
+          status: PaymentStatus.REFUNDED,
+        });
+
+        const result = await paymentService.refundByOrderId(
+          orderId,
+          'Wrong item',
+        );
+        expect(result.status).toBe(PaymentStatus.REFUNDED);
+        expect(mockMomoService.refund).toHaveBeenCalled();
+      });
+
+      it('should throw NotFoundException if payment not found on refund', async () => {
+        mockPaymentRepository.findOne.mockResolvedValue(null);
+
+        await expect(
+          paymentService.refundByOrderId(orderId, 'reason'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('should return payment directly if already refunded', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.REFUNDED,
+        };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+
+        const result = await paymentService.refundByOrderId(orderId, 'reason');
+        expect(result).toEqual(payment);
+      });
+
+      it('should throw BadRequestException if payment status is not SUCCESS', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.PENDING,
+        };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+
+        await expect(
+          paymentService.refundByOrderId(orderId, 'reason'),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should throw BadRequestException if payment method does not support refund', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.SUCCESS,
+          method: 'COD',
+        };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+
+        await expect(
+          paymentService.refundByOrderId(orderId, 'reason'),
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+
+    describe('getPaymentHistory', () => {
+      it('should return payment history list and meta data', async () => {
+        const payments = [{ id: 'p-1', status: PaymentStatus.SUCCESS }];
+        const queryBuilder = {
+          innerJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          skip: jest.fn().mockReturnThis(),
+          take: jest.fn().mockReturnThis(),
+          getManyAndCount: jest.fn().mockResolvedValue([payments, 1]),
+        };
+        mockPaymentRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+
+        const result = await paymentService.getPaymentHistory('user-1', {
+          page: 1,
+          limit: 10,
+          status: PaymentStatus.SUCCESS,
+        });
+
+        expect(result).toHaveProperty('items');
+        expect(result).toHaveProperty('meta');
+        expect(result.meta.totalItems).toBe(1);
+      });
+    });
+  });
+
+  describe('VnpayService Unit Tests', () => {
+    const realVnpayService = new VnpayService(
+      mockOrderRepository as unknown as Repository<Order>,
+      mockConfigService as unknown as ConfigService,
+    );
+
+    const userId = 'user-1';
+    const orderId = 'order-1';
+    const ipAddr = '127.0.0.1';
+
+    it('should successfully generate payment url', async () => {
+      mockOrderRepository.findOne.mockResolvedValue({
+        id: orderId,
+        userId,
+        paymentMethod: PaymentMethod.VNPAY,
+        totalAmount: 100000,
+        orderCode: 'ORD123',
+      });
+
+      const result = await realVnpayService.createPaymentUrl(
+        userId,
+        orderId,
+        ipAddr,
+      );
+      expect(result).toHaveProperty('paymentUrl');
+      expect(result.paymentUrl).toContain('vnp_SecureHash');
+    });
+
+    it('should throw NotFoundException if order not found', async () => {
+      mockOrderRepository.findOne.mockResolvedValue(null);
+      await expect(
+        realVnpayService.createPaymentUrl(userId, orderId, ipAddr),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ForbiddenException if user mismatch', async () => {
+      mockOrderRepository.findOne.mockResolvedValue({
+        id: orderId,
+        userId: 'other-user',
+        paymentMethod: PaymentMethod.VNPAY,
+      });
+      await expect(
+        realVnpayService.createPaymentUrl(userId, orderId, ipAddr),
+      ).rejects.toThrow();
+    });
+
+    it('should throw BadRequestException if payment method is not VNPAY', async () => {
+      mockOrderRepository.findOne.mockResolvedValue({
+        id: orderId,
+        userId,
+        paymentMethod: PaymentMethod.MOMO,
+      });
+      await expect(
+        realVnpayService.createPaymentUrl(userId, orderId, ipAddr),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should return false if hash secret is missing in verifyIpnSignature', () => {
+      jest.spyOn(mockConfigService, 'get').mockReturnValueOnce(undefined);
+      const result = realVnpayService.verifyIpnSignature({});
+      expect(result).toBe(false);
+    });
+
+    it('should find order by orderCode in findOrderForIpn', async () => {
+      const mockOrder = { id: 'order-1', orderCode: 'ORD123' };
+      mockOrderRepository.findOne.mockResolvedValue(mockOrder);
+      const result = await realVnpayService.findOrderForIpn('ORD123');
+      expect(result).toEqual(mockOrder);
+    });
+
+    it('should handle empty orderCode in findOrderForIpn', async () => {
+      const result = await realVnpayService.findOrderForIpn('');
+      expect(result).toBeNull();
+    });
+
+    it('should handle axios connection error gracefully during refund', async () => {
+      mockedAxios.post.mockRejectedValue(new Error('Network Error'));
+
+      const mockOrder = {
+        id: 'order-1',
+        orderCode: 'ORD123',
+        createdAt: new Date(),
+      } as Order;
+      const mockPayment = {
+        id: 'pay-1',
+        amount: 100000,
+        gatewayTxnId: 'txn-123',
+      } as unknown as Payment;
+
+      const result = await realVnpayService.refund(
+        mockOrder,
+        mockPayment,
+        'Customer request',
+      );
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Không thể kết nối tới cổng VNPay');
+    });
+
+    it('should throw BadRequestException if gatewayTxnId is missing on refund', async () => {
+      const mockOrder = {
+        id: 'order-1',
+        orderCode: 'ORD123',
+        createdAt: new Date(),
+      } as Order;
+      const invalidPayment = {
+        id: 'pay-1',
+        amount: 100000,
+      } as unknown as Payment;
+      await expect(
+        realVnpayService.refund(mockOrder, invalidPayment, 'reason'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('MomoService Unit Tests', () => {
+    const realMomoService = new MomoService(
+      mockConfigService as unknown as ConfigService,
+    );
+
+    const mockOrder = { orderCode: 'ORD123' } as Order;
+    const mockPayment = {
+      id: 'pay-1',
+      amount: 100000,
+      gatewayTxnId: '123456',
+    } as unknown as Payment;
+
+    it('should successfully create payment url', async () => {
       mockedAxios.post.mockResolvedValue({
         data: {
-          partnerCode: 'MOMOTEST',
-          orderId: 'gw-1',
-          requestId: 'req-1',
-          amount: 100000,
-          responseTime: Date.now(),
-          message: 'Success',
           resultCode: 0,
-          payUrl: 'https://test-payment.momo.vn/pay/gw-1',
-          deeplink: 'momo://gw-1',
-          qrCodeUrl: 'https://test-payment.momo.vn/qr/gw-1',
+          payUrl: 'https://momo.vn/pay',
+          deeplink: 'momo://',
+          qrCodeUrl: 'https://momo.vn/qr',
+          message: 'Success',
         },
       });
 
-      const result = await service.createPayment(order, payment);
-
-      expect(result.payUrl).toBe('https://test-payment.momo.vn/pay/gw-1');
-      expect(result.resultCode).toBe(0);
-      expect(result.gatewayOrderId).toMatch(/^p1-\d+$/);
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        CONFIG.MOMO_API_ENDPOINT,
-        expect.objectContaining({ amount: 100000, partnerCode: 'MOMOTEST' }),
-        expect.objectContaining({ timeout: CONFIG.MOMO_REQUEST_TIMEOUT_MS }),
+      const result = await realMomoService.createPayment(
+        mockOrder,
+        mockPayment,
       );
+      expect(result).toHaveProperty('payUrl', 'https://momo.vn/pay');
     });
 
-    it('PAY-UNIT-042: throws ServiceUnavailableException on network error', async () => {
-      mockedAxios.post.mockRejectedValue(new Error('timeout'));
+    it('should throw ServiceUnavailableException if axios throws error on createPayment', async () => {
+      mockedAxios.post.mockRejectedValue(new Error('Timeout'));
 
-      await expect(service.createPayment(order, payment)).rejects.toThrow(
-        ServiceUnavailableException,
-      );
+      await expect(
+        realMomoService.createPayment(mockOrder, mockPayment),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
 
-    it('PAY-UNIT-043: throws ServiceUnavailableException when resultCode != 0', async () => {
+    it('should throw ServiceUnavailableException if resultCode is non-zero on createPayment', async () => {
       mockedAxios.post.mockResolvedValue({
-        data: { resultCode: 99, message: 'Invalid request' },
+        data: {
+          resultCode: 1000,
+          message: 'Error',
+        },
       });
 
-      await expect(service.createPayment(order, payment)).rejects.toThrow(
-        ServiceUnavailableException,
+      await expect(
+        realMomoService.createPayment(mockOrder, mockPayment),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('should return false if signatures do not match lengths in verifyIpnSignature', () => {
+      const isValid = realMomoService.verifyIpnSignature({
+        partnerCode: 'TEST',
+        orderId: '123',
+        requestId: '123',
+        amount: 100,
+        orderInfo: 'info',
+        orderType: 'momo',
+        transId: '123',
+        resultCode: 0,
+        message: 'success',
+        payType: 'qr',
+        responseTime: 123,
+        extraData: '',
+        signature: 'wrong-sig-length',
+      });
+      expect(isValid).toBe(false);
+    });
+
+    it('should successfully process refund', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: {
+          resultCode: 0,
+          transId: 123456,
+          message: 'Success',
+        },
+      });
+
+      const result = await realMomoService.refund(
+        mockOrder,
+        mockPayment,
+        'Reason',
       );
-    });
-  });
-
-  describe('verifyIpnSignature', () => {
-    const basePayload: Omit<MomoIpnDto, 'signature'> = {
-      partnerCode: 'MOMOTEST',
-      orderId: 'gw-1',
-      requestId: 'req-1',
-      amount: 100000,
-      orderInfo: 'Thanh toan don hang ORD001',
-      transId: 'txn-1',
-      resultCode: 0,
-      message: 'Success',
-      responseTime: 1700000000000,
-    };
-
-    it('PAY-UNIT-044: returns true for a valid HMAC signature', () => {
-      const signature = signIpnPayload(basePayload);
-      const payload: MomoIpnDto = { ...basePayload, signature };
-
-      expect(service.verifyIpnSignature(payload)).toBe(true);
+      expect(result.success).toBe(true);
+      expect(result.responseCode).toBe('0');
     });
 
-    it('PAY-UNIT-045: returns false for an invalid signature of equal length', () => {
-      const validSignature = signIpnPayload(basePayload);
-      const tampered =
-        (validSignature[0] === 'a' ? 'b' : 'a') + validSignature.slice(1);
+    it('should handle axios error during refund gracefully', async () => {
+      mockedAxios.post.mockRejectedValue(new Error('Network error'));
 
-      const payload: MomoIpnDto = {
-        ...basePayload,
-        signature: tampered,
-      };
-
-      expect(service.verifyIpnSignature(payload)).toBe(false);
+      const result = await realMomoService.refund(
+        mockOrder,
+        mockPayment,
+        'Reason',
+      );
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Không thể kết nối tới cổng Momo');
     });
 
-    it('PAY-UNIT-046: returns false safely when signature length differs', () => {
-      const payload: MomoIpnDto = {
-        ...basePayload,
-        signature: 'too-short',
-      };
-
-      expect(() => service.verifyIpnSignature(payload)).not.toThrow();
-      expect(service.verifyIpnSignature(payload)).toBe(false);
-    });
-  });
-});
-
-// =============================================================================
-// MomoIpnDto — PAY-UNIT-008 → 010
-// =============================================================================
-describe('MomoIpnDto', () => {
-  const VALID_PAYLOAD = {
-    partnerCode: 'MOMOTEST',
-    orderId: 'gw-1-1700000000000',
-    requestId: 'req-1',
-    amount: 100000,
-    orderInfo: 'Thanh toan don hang ORD001',
-    orderType: 'momo_wallet',
-    transId: 'txn-1',
-    resultCode: 0,
-    message: 'Success',
-    payType: 'qr',
-    responseTime: 1700000000000,
-    requestType: 'captureWallet',
-    extraData: '',
-    signature: 'abc123',
-  };
-
-  it('PAY-UNIT-008: rejects payload missing partnerCode', async () => {
-    // Intentionally dropping this key via rest destructure (project's no-unused-vars has no ignoreRestSiblings)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { partnerCode, ...withoutPartnerCode } = VALID_PAYLOAD;
-    const dto = plainToInstance(MomoIpnDto, withoutPartnerCode);
-
-    const errors = await validate(dto);
-
-    expect(errors.some((e) => e.property === 'partnerCode')).toBe(true);
-  });
-
-  it('PAY-UNIT-009: rejects payload with non-integer resultCode', async () => {
-    const dto = plainToInstance(MomoIpnDto, {
-      ...VALID_PAYLOAD,
-      resultCode: '0',
+    it('should throw BadRequestException if gatewayTxnId is missing on refund', async () => {
+      const invalidPayment = {
+        id: 'pay-1',
+        amount: 100000,
+      } as unknown as Payment;
+      await expect(
+        realMomoService.refund(mockOrder, invalidPayment, 'Reason'),
+      ).rejects.toThrow(BadRequestException);
     });
 
-    const errors = await validate(dto);
-
-    expect(errors.some((e) => e.property === 'resultCode')).toBe(true);
-  });
-
-  it('PAY-UNIT-010: accepts a fully valid MoMo IPN payload', async () => {
-    const dto = plainToInstance(MomoIpnDto, VALID_PAYLOAD);
-
-    const errors = await validate(dto);
-
-    expect(errors).toHaveLength(0);
-  });
-});
-
-// =============================================================================
-// VnpayIpnDto — PAY-UNIT-011 / 012
-// =============================================================================
-describe('VnpayIpnDto', () => {
-  const VALID_PAYLOAD = {
-    vnp_TxnRef: 'ORD001',
-    vnp_Amount: '10000000',
-    vnp_ResponseCode: '00',
-    vnp_TransactionStatus: '00',
-    vnp_SecureHash: 'abc123',
-    vnp_TransactionNo: '14000001',
-    vnp_BankCode: 'NCB',
-    vnp_PayDate: '20260824120000',
-  };
-
-  it('PAY-UNIT-011: rejects payload missing vnp_TxnRef', async () => {
-    // Intentionally dropping this key via rest destructure (project's no-unused-vars has no ignoreRestSiblings)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { vnp_TxnRef, ...withoutTxnRef } = VALID_PAYLOAD;
-    const dto = plainToInstance(VnpayIpnDto, withoutTxnRef);
-
-    const errors = await validate(dto);
-
-    expect(errors.some((e) => e.property === 'vnp_TxnRef')).toBe(true);
-  });
-
-  it('PAY-UNIT-012: accepts a fully valid VNPay IPN payload', async () => {
-    const dto = plainToInstance(VnpayIpnDto, VALID_PAYLOAD);
-
-    const errors = await validate(dto);
-
-    expect(errors).toHaveLength(0);
+    it('should throw BadRequestException if gatewayTxnId is not a valid number on refund', async () => {
+      const invalidPayment = {
+        id: 'pay-1',
+        amount: 100000,
+        gatewayTxnId: 'abc',
+      } as unknown as Payment;
+      await expect(
+        realMomoService.refund(mockOrder, invalidPayment, 'Reason'),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 });

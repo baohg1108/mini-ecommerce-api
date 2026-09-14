@@ -4,9 +4,10 @@ import {
   IsOptional,
   IsNumber,
   Min,
+  Max,
   MaxLength,
   MinLength,
-  Max,
+  IsNotEmpty,
 } from 'class-validator';
 
 export class CreateProductDto {
@@ -14,11 +15,13 @@ export class CreateProductDto {
   categoryId!: string;
 
   @IsString()
+  @IsNotEmpty()
   @MinLength(2)
   @MaxLength(255)
   name!: string;
 
   @IsString()
+  @IsNotEmpty()
   @MinLength(2)
   @MaxLength(280)
   slug!: string;

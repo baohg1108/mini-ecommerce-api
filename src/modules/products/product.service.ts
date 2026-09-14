@@ -381,6 +381,9 @@ export class ProductService {
     const qb = this.productRepo
       .createQueryBuilder('product')
       .leftJoin('product.category', 'category')
+      .innerJoin('product.shop', 'shop', 'shop.status = :shopStatus', {
+        shopStatus: ShopStatus.ACTIVE,
+      })
       .addSelect(['category.id', 'category.name', 'category.slug'])
       .where('product.status = :status', { status: 'active' });
 

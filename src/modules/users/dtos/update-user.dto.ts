@@ -4,13 +4,13 @@ import {
   IsOptional,
   MinLength,
   MaxLength,
-  Matches,
+  // IsPhoneNumber,
   IsUrl,
 } from 'class-validator';
 
 export class UpdateUserDto {
   @IsOptional()
-  @IsEmail()
+  @IsEmail({}, { message: 'Invalid email format' })
   @MaxLength(255)
   email?: string;
 
@@ -21,21 +21,21 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(2)
-  @MaxLength(100)
+  @MinLength(2, { message: 'Full name must be at least 2 characters long' })
+  @MaxLength(100, { message: 'Full name must not exceed 100 characters' })
   fullName?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(8)
-  @MaxLength(20)
-  @Matches(/^[0-9+\-\s()]{8,20}$/, { message: 'Phone number is invalid' })
+  @MinLength(8, { message: 'Phone number must be at least 8 characters long' })
+  @MaxLength(20, { message: 'Phone number must not exceed 20 characters' })
+  // @IsPhoneNumber(undefined, { message: 'Invalid phone number format' })
   phone?: string;
 
   @IsOptional()
   @IsString()
   @MinLength(2)
-  @MaxLength(255)
-  @IsUrl()
+  @MaxLength(255, { message: 'Avatar URL must not exceed 255 characters' })
+  @IsUrl({}, { message: 'Invalid URL format for avatarUrl' })
   avatarUrl?: string;
 }
