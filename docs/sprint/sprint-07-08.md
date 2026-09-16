@@ -10,7 +10,7 @@
 
 ## 1. Sprint Overview
 
-**Sprint Goal:** Thiết kế test case áp dụng kỹ thuật **Equivalence Partitioning (EP)**, **Boundary Value Analysis (BVA)** và **Combined EP + BVA** cho tầng **DTO, Service, Controller**  của hệ thống; thực thi **Unit Test** và **E2E Test** (bao gồm phần E2E deferred từ Sprint trước) và tiến hành phân loại dạng test case, thiết kế lại ma trận test case theo giảng viên yêu cầu. Cuối cùng dùng postman test hành vi của api.
+**Sprint Goal:** Thiết kế test case áp dụng kỹ thuật **Equivalence Partitioning (EP)**, **Boundary Value Analysis (BVA)** và **Combined EP + BVA** cho tầng **DTO, Service, Controller** của hệ thống; thực thi **Unit Test** và **E2E Test** (bao gồm phần E2E deferred từ Sprint trước) và tiến hành phân loại dạng test case, thiết kế lại ma trận test case theo giảng viên yêu cầu. Cuối cùng dùng postman test hành vi của api.
 
 **Phạm vi chính:**
 
@@ -18,7 +18,7 @@
 - Thiết kế test BVA cho các field có ràng buộc (độ dài, giá trị số, số lượng...).
 - Thiết kế test Combined EP + BVA
 - Thiết kế E2E test case lại toàn bộ
-- Thực kế API test (Postman test) để kiểm tra hành vi của API
+- Thiết kế API test (Postman test) để kiểm tra hành vi của API
 - Viết và thực thi Unit Test cho DTO
 - Viết và thực thi Unit Test cho Service
 - Viết và thực thi Unit Test cho Controller
