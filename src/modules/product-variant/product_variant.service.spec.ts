@@ -200,6 +200,164 @@ describe('ProductVariantService Unit Test Cases (Service Only)', () => {
       expect(result.failed.length).toBe(1);
       expect(result.failed[0].reason).toContain('Variant not found');
     });
+
+    it('PV-UNIT-020: should throw ConflictException (isolated) when updating a variant to a SKU owned by another variant', async () => {
+      mockProductRepository.findOne.mockResolvedValue({
+        id: productId,
+        shop: { userId },
+      });
+
+      const existingVariant = {
+        id: 'variant-1',
+        productId,
+        sku: 'SKU-OLD',
+        price: 100,
+        stockQty: 10,
+      };
+      const otherVariant = {
+        id: 'variant-2',
+        productId,
+        sku: 'SKU-TAKEN',
+        price: 200,
+        stockQty: 5,
+      };
+
+      mockVariantRepository.find.mockResolvedValue([
+        existingVariant,
+        otherVariant,
+      ]);
+
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        // sku-wide lookup returns the OTHER variant already owning SKU-TAKEN
+        getMany: jest.fn().mockResolvedValue([otherVariant]),
+      };
+      mockVariantRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      mockVariantRepository.save.mockImplementation((item: any) =>
+        Promise.resolve(item),
+      );
+
+      const dto = {
+        variants: [
+          { id: 'variant-1', sku: 'SKU-TAKEN', price: 150, stockQty: 20 },
+        ],
+      };
+
+      const result = await service.Upsert(productId, userId, dto);
+
+      expect(result.succeeded.length).toBe(0);
+      expect(result.failed.length).toBe(1);
+      expect(result.failed[0].reason).toContain('SKU already exists');
+      expect(mockVariantRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('PV-UNIT-021: should create a new variant when item has no id (create path)', async () => {
+      mockProductRepository.findOne.mockResolvedValue({
+        id: productId,
+        shop: { userId },
+      });
+
+      mockVariantRepository.find.mockResolvedValue([]);
+
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]), // no sku conflicts
+      };
+      mockVariantRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      mockVariantRepository.create.mockImplementation(
+        (item: Partial<ProductVariant>) => item,
+      );
+      mockVariantRepository.save.mockImplementation(
+        (item: Partial<ProductVariant>) =>
+          Promise.resolve({ ...item, id: 'new-variant-id' }),
+      );
+
+      const dto = {
+        variants: [{ sku: 'SKU-BRAND-NEW', price: 75, stockQty: 8 }],
+      };
+
+      const result = await service.Upsert(productId, userId, dto);
+
+      expect(result.failed.length).toBe(0);
+      expect(result.succeeded.length).toBe(1);
+      expect(result.succeeded[0]).toHaveProperty('id', 'new-variant-id');
+      expect(mockVariantRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ productId, sku: 'SKU-BRAND-NEW' }),
+      );
+    });
+
+    it('PV-UNIT-022: should isolate ConflictException when creating a new variant with a SKU that already exists', async () => {
+      mockProductRepository.findOne.mockResolvedValue({
+        id: productId,
+        shop: { userId },
+      });
+
+      mockVariantRepository.find.mockResolvedValue([]);
+
+      const existingBySku = { id: 'variant-x', sku: 'SKU-DUP' };
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([existingBySku]),
+      };
+      mockVariantRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      const dto = {
+        variants: [{ sku: 'SKU-DUP', price: 30, stockQty: 2 }],
+      };
+
+      const result = await service.Upsert(productId, userId, dto);
+
+      expect(result.succeeded.length).toBe(0);
+      expect(result.failed.length).toBe(1);
+      expect(result.failed[0].reason).toContain('SKU already exists');
+      expect(mockVariantRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('PV-UNIT-023: should prevent a later new item in the same batch from reusing a just-created SKU', async () => {
+      mockProductRepository.findOne.mockResolvedValue({
+        id: productId,
+        shop: { userId },
+      });
+
+      mockVariantRepository.find.mockResolvedValue([]);
+
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]), // no pre-existing conflicts
+      };
+      mockVariantRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      mockVariantRepository.create.mockImplementation(
+        (item: Partial<ProductVariant>) => item,
+      );
+      mockVariantRepository.save.mockImplementation(
+        (item: Partial<ProductVariant>) =>
+          Promise.resolve({ ...item, id: `id-${item.sku}` }),
+      );
+
+      const dto = {
+        variants: [
+          { sku: 'SKU-BATCH', price: 10, stockQty: 1 },
+          { sku: 'SKU-BATCH', price: 12, stockQty: 2 },
+        ],
+      };
+
+      const result = await service.Upsert(productId, userId, dto);
+
+      expect(result.succeeded.length).toBe(1);
+      expect(result.failed.length).toBe(1);
+      expect(result.failed[0].reason).toContain('SKU already exists');
+    });
   });
 
   describe('findById & findBySku', () => {
@@ -281,6 +439,65 @@ describe('ProductVariantService Unit Test Cases (Service Only)', () => {
         service.update(variantId, userId, { sku: 'SKU-NEW' }),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('PV-UNIT-024: should throw NotFoundException if variant does not belong to the requesting user shop', async () => {
+      mockVariantRepository.findOne.mockResolvedValueOnce({
+        id: variantId,
+        sku: 'SKU-1',
+        product: { shop: { userId: 'other-user' } },
+      });
+
+      await expect(
+        service.update(variantId, userId, { price: 100 }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('PV-UNIT-025: should successfully change the SKU when the new SKU is not taken', async () => {
+      mockVariantRepository.findOne.mockResolvedValueOnce({
+        id: variantId,
+        sku: 'SKU-OLD',
+        product: { shop: { userId } },
+      });
+      // sku-uniqueness lookup finds nothing
+      mockVariantRepository.findOne.mockResolvedValueOnce(null);
+      mockVariantRepository.save.mockImplementation((v: any) =>
+        Promise.resolve(v),
+      );
+
+      const result = await service.update(variantId, userId, {
+        sku: 'SKU-BRAND-NEW',
+      });
+
+      expect(result.sku).toBe('SKU-BRAND-NEW');
+    });
+
+    it('PV-UNIT-026: should update attributes, stockQty and imageUrl fields when provided', async () => {
+      mockVariantRepository.findOne.mockResolvedValueOnce({
+        id: variantId,
+        sku: 'SKU-1',
+        attributes: { color: 'red' },
+        stockQty: 5,
+        imageUrl: 'https://old.example.com/img.png',
+        product: { shop: { userId } },
+      });
+      mockVariantRepository.save.mockImplementation((v: any) =>
+        Promise.resolve(v),
+      );
+
+      const dto = {
+        attributes: { color: 'blue', size: 'L' },
+        stockQty: 42,
+        imageUrl: 'https://new.example.com/img.png',
+      };
+
+      const result = await service.update(variantId, userId, dto);
+
+      expect(result.attributes).toEqual({ color: 'blue', size: 'L' });
+      expect(result.stockQty).toBe(42);
+      expect(result.imageUrl).toBe('https://new.example.com/img.png');
+      // sku lookup should not be triggered since dto.sku is undefined
+      expect(mockVariantRepository.findOne).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('findByProduct', () => {
@@ -333,6 +550,25 @@ describe('ProductVariantService Unit Test Cases (Service Only)', () => {
           2,
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('PV-UNIT-027: should throw NotFoundException on commitStock when variant does not exist', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      };
+      mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+
+      await expect(
+        service.commitStock(
+          mockEntityManager as unknown as EntityManager,
+          'non-existent-id',
+          2,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockEntityManager.save).not.toHaveBeenCalled();
     });
 
     it('should release reserved stock safely without dropping below 0', async () => {
