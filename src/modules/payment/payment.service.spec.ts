@@ -226,6 +226,24 @@ describe('Payment Module Unified Unit Test Cases', () => {
       });
     });
 
+    // PAY-UNIT-038 / PAY-UNIT-039
+    describe('findByGatewayOrderId', () => {
+      it('should return payment when found by gatewayOrderId', async () => {
+        const payment = { id: 'p-1', gatewayOrderId: 'gw-1' };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+
+        const result = await paymentService.findByGatewayOrderId('gw-1');
+        expect(result).toEqual(payment);
+      });
+
+      it('should return null when not found by gatewayOrderId', async () => {
+        mockPaymentRepository.findOne.mockResolvedValue(null);
+
+        const result = await paymentService.findByGatewayOrderId('gw-x');
+        expect(result).toBeNull();
+      });
+    });
+
     describe('attachGatewayOrderId', () => {
       it('should successfully attach gateway order ID', async () => {
         const payment = { id: 'p-1', gatewayOrderId: null };
@@ -333,6 +351,42 @@ describe('Payment Module Unified Unit Test Cases', () => {
         expect(result).toEqual(payment);
         expect(mockEntityManager.save).not.toHaveBeenCalled();
       });
+
+      // PAY-UNIT-040
+      it('should update gatewayResponseCode, gatewaySignature and rawCallbackPayload when provided', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.PENDING,
+        };
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+        mockEntityManager.save.mockImplementation((_entity, p) =>
+          Promise.resolve(p),
+        );
+        mockEntityManager.find.mockResolvedValue([]);
+
+        const result = await paymentService.markSuccess(
+          mockEntityManager as unknown as EntityManager,
+          orderId,
+          {
+            gatewayTxnId: 'txn-1',
+            gatewayResponseCode: '00',
+            gatewaySignature: 'sig-abc',
+            rawCallbackPayload: { foo: 'bar' },
+          },
+        );
+
+        expect(result.gatewayTxnId).toBe('txn-1');
+        expect(result.gatewayResponseCode).toBe('00');
+        expect(result.gatewaySignature).toBe('sig-abc');
+        expect(result.rawCallbackPayload).toEqual({ foo: 'bar' });
+      });
     });
 
     describe('markFailed', () => {
@@ -389,6 +443,187 @@ describe('Payment Module Unified Unit Test Cases', () => {
             orderId,
           ),
         ).rejects.toThrow(NotFoundException);
+      });
+
+      // PAY-UNIT-041
+      it('should update gatewaySignature and rawCallbackPayload when provided', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.PENDING,
+        };
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+        mockEntityManager.save.mockImplementation((_entity, p) =>
+          Promise.resolve(p),
+        );
+        mockEntityManager.find.mockResolvedValue([]);
+
+        const result = await paymentService.markFailed(
+          mockEntityManager as unknown as EntityManager,
+          orderId,
+          {
+            gatewayResponseCode: '01',
+            gatewaySignature: 'sig-xyz',
+            rawCallbackPayload: { err: 'code' },
+          },
+        );
+
+        expect(result.gatewaySignature).toBe('sig-xyz');
+        expect(result.rawCallbackPayload).toEqual({ err: 'code' });
+      });
+    });
+
+    // PAY-UNIT-042
+    describe('markSuccessByOrderId', () => {
+      it('should run markSuccess inside a transaction', async () => {
+        const orderId = 'order-1';
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.PENDING,
+        };
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+        mockEntityManager.save.mockResolvedValue({
+          ...payment,
+          status: PaymentStatus.SUCCESS,
+        });
+        mockEntityManager.find.mockResolvedValue([]);
+
+        const result = await paymentService.markSuccessByOrderId(orderId, {
+          gatewayTxnId: 'txn-1',
+        });
+
+        expect(result.status).toBe(PaymentStatus.SUCCESS);
+        expect(mockDataSource.transaction).toHaveBeenCalled();
+      });
+    });
+
+    // PAY-UNIT-043
+    describe('markFailedByOrderId', () => {
+      it('should run markFailed inside a transaction', async () => {
+        const orderId = 'order-1';
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.PENDING,
+        };
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+        mockEntityManager.save.mockResolvedValue({
+          ...payment,
+          status: PaymentStatus.FAILED,
+        });
+        mockEntityManager.find.mockResolvedValue([]);
+
+        const result = await paymentService.markFailedByOrderId(orderId, {
+          gatewayResponseCode: '01',
+        });
+
+        expect(result.status).toBe(PaymentStatus.FAILED);
+        expect(mockDataSource.transaction).toHaveBeenCalled();
+      });
+    });
+
+    // PAY-UNIT-044 / PAY-UNIT-045
+    describe('markSuccessByGatewayOrderId', () => {
+      it('should mark success when payment found by gatewayOrderId', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId: 'order-1',
+          gatewayOrderId: 'gw-1',
+          status: PaymentStatus.PENDING,
+        };
+        mockEntityManager.findOne.mockResolvedValueOnce(payment);
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+        mockEntityManager.save.mockResolvedValue({
+          ...payment,
+          status: PaymentStatus.SUCCESS,
+        });
+        mockEntityManager.find.mockResolvedValue([]);
+
+        const result = await paymentService.markSuccessByGatewayOrderId(
+          'gw-1',
+          {},
+        );
+
+        expect(result?.status).toBe(PaymentStatus.SUCCESS);
+      });
+
+      it('should return null when payment not found by gatewayOrderId', async () => {
+        mockEntityManager.findOne.mockResolvedValueOnce(null);
+
+        const result = await paymentService.markSuccessByGatewayOrderId(
+          'gw-x',
+          {},
+        );
+
+        expect(result).toBeNull();
+      });
+    });
+
+    // PAY-UNIT-046 / PAY-UNIT-047
+    describe('markFailedByGatewayOrderId', () => {
+      it('should mark failed when payment found by gatewayOrderId', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId: 'order-1',
+          gatewayOrderId: 'gw-1',
+          status: PaymentStatus.PENDING,
+        };
+        mockEntityManager.findOne.mockResolvedValueOnce(payment);
+
+        const queryBuilder = {
+          where: jest.fn().mockReturnThis(),
+          setLock: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(payment),
+        };
+        mockEntityManager.createQueryBuilder.mockReturnValue(queryBuilder);
+        mockEntityManager.save.mockResolvedValue({
+          ...payment,
+          status: PaymentStatus.FAILED,
+        });
+        mockEntityManager.find.mockResolvedValue([]);
+
+        const result = await paymentService.markFailedByGatewayOrderId(
+          'gw-1',
+          {},
+        );
+
+        expect(result?.status).toBe(PaymentStatus.FAILED);
+      });
+
+      it('should return null when payment not found by gatewayOrderId', async () => {
+        mockEntityManager.findOne.mockResolvedValueOnce(null);
+
+        const result = await paymentService.markFailedByGatewayOrderId(
+          'gw-x',
+          {},
+        );
+
+        expect(result).toBeNull();
       });
     });
 
@@ -496,6 +731,54 @@ describe('Payment Module Unified Unit Test Cases', () => {
         await expect(
           paymentService.refundByOrderId(orderId, 'reason'),
         ).rejects.toThrow(BadRequestException);
+      });
+
+      // PAY-UNIT-048
+      it('should throw NotFoundException if payment disappears during refund transaction', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.SUCCESS,
+          method: PaymentMethod.VNPAY,
+          order: { id: orderId },
+        };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+        mockVnpayService.refund.mockResolvedValue({
+          success: true,
+          responseCode: '00',
+          gatewayTxnId: 'ref-123',
+        });
+        mockEntityManager.findOne.mockResolvedValue(null);
+
+        await expect(
+          paymentService.refundByOrderId(orderId, 'reason'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      // PAY-UNIT-049
+      it('should not change status and log warning when gateway refund fails', async () => {
+        const payment = {
+          id: 'p-1',
+          orderId,
+          status: PaymentStatus.SUCCESS,
+          method: PaymentMethod.VNPAY,
+          order: { id: orderId },
+        };
+        mockPaymentRepository.findOne.mockResolvedValue(payment);
+        mockVnpayService.refund.mockResolvedValue({
+          success: false,
+          responseCode: '99',
+          message: 'Insufficient funds',
+        });
+        mockEntityManager.findOne.mockResolvedValue(payment);
+        mockEntityManager.save.mockImplementation((_entity, p) =>
+          Promise.resolve(p),
+        );
+
+        const result = await paymentService.refundByOrderId(orderId, 'reason');
+
+        expect(result.status).toBe(PaymentStatus.SUCCESS);
+        expect(result.refundResponseCode).toBe('99');
       });
     });
 
