@@ -9,7 +9,7 @@ import { VoucherStatus } from '../../common/enums/voucher-status.enum';
 import { VoucherType } from '../../common/enums/voucher-type.enum';
 import { AppException } from '../../common/exceptions/app.exception';
 import { GroupedCartDto } from '../cart/dtos/grouped-cart.dto';
-import { VoucherOrderContext } from './interfaces/voucher-order-context.interface';
+// import { VoucherOrderContext } from './interfaces/voucher-order-context.interface';
 
 describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
   let service: VoucherValidationService;
@@ -22,10 +22,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
   const mockVoucherUsageRepository = {
     count: jest.fn(),
   };
-
-  // ==========================================================================
-  // HELPERS
-  // ==========================================================================
   const DAY = 86400000;
   type VoucherStub = Record<string, unknown>;
 
@@ -66,7 +62,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
       ],
     }));
 
-  // Trả voucher theo `code` ở where[0]
   const mockVouchersByCode = (...vouchers: VoucherStub[]) => {
     mockVoucherRepository.findOne.mockImplementation(
       (options: { where: unknown }) => {
@@ -103,9 +98,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     expect(service).toBeDefined();
   });
 
-  // ==========================================================================
-  // validateVoucher
-  // ==========================================================================
   describe('validateVoucher', () => {
     const orderContext = { orderAmount: 500000, shopId: 'shop-1' };
 
@@ -228,9 +220,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     });
   });
 
-  // ==========================================================================
-  // countUserUsage
-  // ==========================================================================
   describe('countUserUsage', () => {
     it('[VAL-UNIT-011] should return usage count from repository', async () => {
       mockVoucherUsageRepository.count.mockResolvedValue(3);
@@ -244,9 +233,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     });
   });
 
-  // ==========================================================================
-  // applyVouchersToCart
-  // ==========================================================================
   describe('applyVouchersToCart', () => {
     const groupedCart = buildCart([
       { id: 'shop-1', price: 300000 },
@@ -316,9 +302,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     });
   });
 
-  // ==========================================================================
-  // findAvailableVouchers
-  // ==========================================================================
   describe('findAvailableVouchers', () => {
     it('[VAL-UNIT-016] should return empty array if cart is empty', async () => {
       const result = await service.findAvailableVouchers('user-1', []);
@@ -376,9 +359,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     });
   });
 
-  // ==========================================================================
-  // recordUsage
-  // ==========================================================================
   describe('recordUsage', () => {
     it('[VAL-UNIT-019] should increment usedCount and save voucher usage via entity manager', async () => {
       const mockManager = {
@@ -413,9 +393,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     });
   });
 
-  // ==========================================================================
-  // validateVoucher - nhánh bổ sung
-  // ==========================================================================
   describe('validateVoucher - additional branches', () => {
     const ctx = { orderAmount: 500000, shopId: 'shop-1' };
 
@@ -523,9 +500,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     });
   });
 
-  // ==========================================================================
-  // applyVouchersToCart - nhánh bổ sung
-  // ==========================================================================
   describe('applyVouchersToCart - additional branches', () => {
     it('[VAL-UNIT-028] should normalize, dedupe and ignore blank codes', async () => {
       mockVouchersByCode(buildVoucher({ code: 'SYS10' }));
@@ -741,7 +715,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
       expect(result.finalAmount).toBe(900);
     });
 
-    // Nếu assertNoVoucherScopeConflict (util) ném lỗi với voucher shop lạ thì xoá test này
     it('[VAL-UNIT-038] should treat shop voucher of a shop not in cart as order amount 0', async () => {
       mockVouchersByCode(
         buildVoucher({
@@ -830,9 +803,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     });
   });
 
-  // ==========================================================================
-  // Defensive branches (gọi private method trực tiếp)
-  // ==========================================================================
   describe('allocation - defensive branches', () => {
     type Allocation = {
       shopAllocations: Array<{ subtotal: number; finalAmount: number }>;
@@ -876,9 +846,6 @@ describe('VoucherValidationService (Comprehensive Unit Tests)', () => {
     });
   });
 
-  // ==========================================================================
-  // findAvailableVouchers - nhánh bổ sung
-  // ==========================================================================
   describe('findAvailableVouchers - additional branches', () => {
     // shop-1 = 200000 (item price null tính 0), shop-2 = 1000000, cartTotal = 1200000
     const mixedCart = [
