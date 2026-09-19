@@ -285,6 +285,43 @@ describe('RefundRequestsService (Full Coverage Unit Tests)', () => {
         AppException,
       );
     });
+
+    // RR-UNIT-023
+    it('should throw NOT_FOUND if refund request record disappears when approving', async () => {
+      mockEntityManager.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.approve('req-x', 'admin-1')).rejects.toThrow(
+        AppException,
+      );
+    });
+
+    // RR-UNIT-024
+    it('should throw CONFLICT if refund request has already been processed', async () => {
+      mockEntityManager.findOne.mockResolvedValueOnce({
+        id: 'req-1',
+        orderId: 'order-1',
+        status: RefundRequestStatus.APPROVED,
+      });
+
+      await expect(service.approve('req-1', 'admin-1')).rejects.toThrow(
+        AppException,
+      );
+    });
+
+    // RR-UNIT-025
+    it('should throw NOT_FOUND if order associated with refund request is missing', async () => {
+      mockEntityManager.findOne
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          orderId: 'order-1',
+          status: RefundRequestStatus.PENDING,
+        })
+        .mockResolvedValueOnce(null);
+
+      await expect(service.approve('req-1', 'admin-1')).rejects.toThrow(
+        AppException,
+      );
+    });
   });
 
   describe('retryRefund', () => {
@@ -360,6 +397,30 @@ describe('RefundRequestsService (Full Coverage Unit Tests)', () => {
         'order-1',
         'Error',
       );
+    });
+
+    // RR-UNIT-022
+    it('should log error and not throw when gateway refund call fails during retry', async () => {
+      mockRefundRequestRepository.findOne.mockResolvedValue({
+        id: 'req-1',
+        status: RefundRequestStatus.APPROVED,
+        orderId: 'order-1',
+        reason: 'Error',
+      });
+      mockOrderRepository.findOne.mockResolvedValue({
+        id: 'order-1',
+        status: OrderStatus.REFUND_REQUESTED,
+      });
+      mockUsersService.findUserById.mockResolvedValue({
+        id: 'admin-1',
+        role: UserRole.ADMIN,
+      });
+      mockPaymentService.refundByOrderId.mockRejectedValueOnce(
+        new Error('Gateway timeout'),
+      );
+
+      const result = await service.retryRefund('req-1', 'admin-1');
+      expect(result).toBeDefined();
     });
   });
 
@@ -475,6 +536,39 @@ describe('RefundRequestsService (Full Coverage Unit Tests)', () => {
       await expect(service.approve('req-1', 'seller-2')).rejects.toThrow(
         AppException,
       );
+    });
+
+    // RR-UNIT-026
+    it('should allow seller to review when they own the shop of the order', async () => {
+      mockEntityManager.findOne
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          orderId: 'order-1',
+          status: RefundRequestStatus.PENDING,
+          reason: 'Defect',
+        })
+        .mockResolvedValueOnce({
+          id: 'order-1',
+          shopId: 'shop-1',
+          status: OrderStatus.DELIVERED,
+        })
+        .mockResolvedValueOnce({
+          id: 'shop-1',
+          userId: 'seller-1',
+        })
+        .mockResolvedValueOnce({
+          id: 'pay-1',
+          orderId: 'order-1',
+          method: PaymentMethod.COD,
+        });
+
+      mockUsersService.findUserById.mockResolvedValue({
+        id: 'seller-1',
+        role: UserRole.SELLER,
+      });
+
+      const result = await service.approve('req-1', 'seller-1');
+      expect(result).toBeDefined();
     });
   });
 });

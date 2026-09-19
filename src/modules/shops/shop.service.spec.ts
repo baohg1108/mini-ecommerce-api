@@ -141,6 +141,38 @@ describe('ShopService (Service Unit Tests)', () => {
       expect(mockShopRepository.save).toHaveBeenCalled();
       expect(mockUserRepository.save).toHaveBeenCalled();
     });
+
+    it('should regenerate slug when a conflict exists on first attempt (SHOP-UNIT-030)', async () => {
+      const user = { id: 'user-1', role: UserRole.CUSTOMER };
+
+      mockUserRepository.findOne.mockResolvedValue(user);
+      mockShopRepository.findOne
+        .mockResolvedValueOnce(null) // existing shop lookup -> no existing shop for this user
+        .mockResolvedValueOnce({
+          id: 'other-shop-id',
+          slug: 'electronics-shop',
+        }) // 1st slug check -> conflict (different shop id) -> loop must retry
+        .mockResolvedValueOnce(null); // 2nd slug check (after regenerating) -> no conflict -> loop breaks
+
+      mockShopRepository.create.mockReturnValue({
+        id: 'shop-new',
+        ...createShopDto,
+        userId: 'user-1',
+      });
+      mockShopRepository.save.mockResolvedValue({
+        id: 'shop-new',
+        ...createShopDto,
+        status: ShopStatus.PENDING,
+      });
+      mockUserRepository.save.mockResolvedValue(user);
+
+      const result = await service.registerShop('user-1', createShopDto);
+
+      expect(result).toBeDefined();
+      // existingShop lookup (1) + slug check attempt 1 (2) + slug check attempt 2 (3) = 3 calls
+      expect(mockShopRepository.findOne).toHaveBeenCalledTimes(3);
+      expect(mockShopRepository.save).toHaveBeenCalled();
+    });
   });
 
   describe('getMyShop', () => {
@@ -274,6 +306,15 @@ describe('ShopService (Service Unit Tests)', () => {
         service.rejectShop('shop-1', 'admin-1', rejectDto),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('should throw NotFoundException if shop not found (SHOP-UNIT-027)', async () => {
+      mockShopRepository.findOne.mockResolvedValue(null);
+      const rejectDto: RejectShopDto = { reason: 'Invalid documents' };
+
+      await expect(
+        service.rejectShop('shop-1', 'admin-1', rejectDto),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('suspendShop', () => {
@@ -304,6 +345,15 @@ describe('ShopService (Service Unit Tests)', () => {
         service.suspendShop('shop-1', 'admin-1', suspendDto),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('should throw NotFoundException if shop not found (SHOP-UNIT-028)', async () => {
+      mockShopRepository.findOne.mockResolvedValue(null);
+      const suspendDto: SuspendedShopDto = { reasonSuspended: 'Violation' };
+
+      await expect(
+        service.suspendShop('shop-1', 'admin-1', suspendDto),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('unlockShop', () => {
@@ -326,6 +376,14 @@ describe('ShopService (Service Unit Tests)', () => {
 
       await expect(service.unlockShop('shop-1', 'admin-1')).rejects.toThrow(
         ConflictException,
+      );
+    });
+
+    it('should throw NotFoundException if shop not found (SHOP-UNIT-029)', async () => {
+      mockShopRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.unlockShop('shop-1', 'admin-1')).rejects.toThrow(
+        NotFoundException,
       );
     });
   });

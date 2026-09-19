@@ -83,6 +83,29 @@ describe('AuthService (Pure Service Unit Tests)', () => {
         ConflictException,
       );
     });
+
+    it('should normalize email before saving (AUTH-UNIT-03)', async () => {
+      mockUsersService.findUserByEmailOrNull.mockResolvedValue(null);
+      const createdUser = {
+        id: '1',
+        email: 'test@test.com',
+        fullName: 'Bao Hoang',
+      };
+      mockUsersService.createUser.mockResolvedValue(createdUser);
+
+      const dto: RegisterDto = {
+        email: 'TEST@Test.com',
+        password: 'Password@123',
+        fullName: 'Bao Hoang',
+      };
+
+      await authService.register(dto);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(usersService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'test@test.com' }),
+      );
+    });
   });
 
   describe('login', () => {
@@ -184,6 +207,19 @@ describe('AuthService (Pure Service Unit Tests)', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
+    it('should throw UnauthorizedException if user has no refreshToken (AUTH-UNIT-12)', async () => {
+      mockUsersService.findUserByIdOrNull.mockResolvedValue({
+        id: '1',
+        email: 'user@example.com',
+        refreshToken: null, // user tồn tại nhưng chưa từng login / đã logout trước đó
+        status: UserStatus.ACTIVE,
+      });
+
+      await expect(authService.refreshTokens('1', 'any-token')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
     it('should throw UnauthorizedException if refresh token invalid', async () => {
       const hashedToken = await bcrypt.hash('valid-refresh', 10);
       mockUsersService.findUserByIdOrNull.mockResolvedValue({
@@ -207,6 +243,20 @@ describe('AuthService (Pure Service Unit Tests)', () => {
       await expect(authService.refreshTokens('1', 'token')).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+
+    it('should throw UnauthorizedException if account is locked with valid refreshToken hash (AUTH-UNIT-13)', async () => {
+      const hashedToken = await bcrypt.hash('valid-refresh', 10);
+      mockUsersService.findUserByIdOrNull.mockResolvedValue({
+        id: '1',
+        email: 'user@example.com',
+        refreshToken: hashedToken,
+        status: UserStatus.LOCKED,
+      });
+
+      await expect(
+        authService.refreshTokens('1', 'valid-refresh'),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 });

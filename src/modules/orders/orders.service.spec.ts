@@ -22,7 +22,6 @@ import { CreateOrderDto } from './dtos/create-order.dto';
 import { SellerOrderListQueryDto } from './dtos/seller-order-list-query.dto';
 import { AdminOrderQueryDto } from './dtos/admin-order-query.dto';
 
-// Định nghĩa Type rõ ràng để ESLint không cảnh báo Unsafe Call (kiểu any)
 type MockQueryBuilder = {
   where: jest.Mock;
   andWhere: jest.Mock;
@@ -83,7 +82,6 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
   const mockEntityManager = {
     createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
     save: jest.fn().mockImplementation((_entity: unknown, data: unknown) => {
-      // Nếu data là mảng, ép kiểu rõ ràng để tránh lỗi unsafe-return
       if (Array.isArray(data)) {
         const items = data as Record<string, unknown>[];
         return Promise.resolve(
@@ -93,7 +91,6 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
           })),
         );
       }
-      // Nếu data là 1 object đơn lẻ
       return Promise.resolve({
         id: 'order-1',
         ...(data as Record<string, unknown>),
@@ -146,7 +143,6 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
   });
 
   describe('checkout (Happy & Sad Paths)', () => {
-    // Không dùng ép kiểu thừa "as CreateOrderDto", tự động match object type
     const checkoutDto: CreateOrderDto = {
       address: {
         recipientName: 'Nguyen Van A',
@@ -197,7 +193,6 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
         totalDiscount: 15000,
       });
 
-      // Type MockQueryBuilder đã được định nghĩa nên gọi .mockResolvedValue hoàn toàn safe
       mockQueryBuilder.getOne.mockResolvedValue({
         id: 'v-1',
         availableQty: 10,
@@ -213,6 +208,168 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
       expect(result.length).toBe(1);
       expect(mockVoucherValidationService.recordUsage).toHaveBeenCalled();
       expect(mockEntityManager.delete).toHaveBeenCalled();
+    });
+
+    // ORD-UNIT-019
+    it('should throw BadRequestException when an item exceeds available stock in cart summary', async () => {
+      const groupedCart = [
+        {
+          shop: { id: 'shop-1', name: 'Shop 1' },
+          items: [
+            {
+              variantId: 'v-1',
+              productName: 'Prod 1',
+              quantity: 10,
+              stockQty: 5,
+              price: 100000,
+            },
+          ],
+        },
+      ];
+      mockCartService.getGroupedCartForCheckout.mockResolvedValue(groupedCart);
+
+      await expect(service.checkout('user-1', checkoutDto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    // ORD-UNIT-020
+    it('should throw NotFoundException when cart record itself is missing after order creation', async () => {
+      const groupedCart = [
+        {
+          shop: { id: 'shop-1', name: 'Shop 1' },
+          items: [
+            {
+              variantId: 'v-1',
+              productName: 'Prod 1',
+              quantity: 2,
+              stockQty: 5,
+              price: 100000,
+            },
+          ],
+        },
+      ];
+      mockCartService.getGroupedCartForCheckout.mockResolvedValue(groupedCart);
+      mockQueryBuilder.getOne.mockResolvedValue({
+        id: 'v-1',
+        availableQty: 10,
+        reservedQty: 0,
+        attributes: {},
+      });
+      mockEntityManager.findOne.mockResolvedValue(null); // cart not found
+
+      const dtoNoVoucher: CreateOrderDto = {
+        address: checkoutDto.address,
+        paymentMethod: PaymentMethod.COD,
+      };
+
+      await expect(service.checkout('user-1', dtoNoVoucher)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    // ORD-UNIT-021
+    it('should process multiple cart items sorted by variantId to avoid deadlock', async () => {
+      const groupedCart = [
+        {
+          shop: { id: 'shop-1', name: 'Shop 1' },
+          items: [
+            {
+              variantId: 'v-2',
+              productName: 'Prod 2',
+              quantity: 1,
+              stockQty: 5,
+              price: 50000,
+            },
+            {
+              variantId: 'v-1',
+              productName: 'Prod 1',
+              quantity: 1,
+              stockQty: 5,
+              price: 100000,
+            },
+          ],
+        },
+      ];
+      mockCartService.getGroupedCartForCheckout.mockResolvedValue(groupedCart);
+      mockQueryBuilder.getOne.mockResolvedValue({
+        id: 'v-1',
+        availableQty: 10,
+        reservedQty: 0,
+        attributes: {},
+      });
+      mockEntityManager.findOne.mockResolvedValue({ id: 'cart-1' });
+
+      const dtoNoVoucher: CreateOrderDto = {
+        address: checkoutDto.address,
+        paymentMethod: PaymentMethod.COD,
+      };
+
+      const result = await service.checkout('user-1', dtoNoVoucher);
+      expect(result.length).toBe(1);
+    });
+
+    // ORD-UNIT-022
+    it('should throw NotFoundException when variant not found during order creation', async () => {
+      const groupedCart = [
+        {
+          shop: { id: 'shop-1', name: 'Shop 1' },
+          items: [
+            {
+              variantId: 'v-1',
+              productName: 'Prod 1',
+              quantity: 1,
+              stockQty: 5,
+              price: 100000,
+            },
+          ],
+        },
+      ];
+      mockCartService.getGroupedCartForCheckout.mockResolvedValue(groupedCart);
+      mockQueryBuilder.getOne.mockResolvedValue(null);
+
+      const dtoNoVoucher: CreateOrderDto = {
+        address: checkoutDto.address,
+        paymentMethod: PaymentMethod.COD,
+      };
+
+      await expect(service.checkout('user-1', dtoNoVoucher)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    // ORD-UNIT-023
+    it('should throw BadRequestException when variant availableQty is insufficient at lock time', async () => {
+      const groupedCart = [
+        {
+          shop: { id: 'shop-1', name: 'Shop 1' },
+          items: [
+            {
+              variantId: 'v-1',
+              productName: 'Prod 1',
+              quantity: 5,
+              stockQty: 10,
+              price: 100000,
+            },
+          ],
+        },
+      ];
+      mockCartService.getGroupedCartForCheckout.mockResolvedValue(groupedCart);
+      mockQueryBuilder.getOne.mockResolvedValue({
+        id: 'v-1',
+        availableQty: 2,
+        reservedQty: 0,
+        attributes: {},
+      });
+
+      const dtoNoVoucher: CreateOrderDto = {
+        address: checkoutDto.address,
+        paymentMethod: PaymentMethod.COD,
+      };
+
+      await expect(service.checkout('user-1', dtoNoVoucher)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -257,6 +414,75 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
       const result = await service.confirmOrder('order-1', 'seller-1');
       expect(result.status).toBe(OrderStatus.CONFIRMED);
     });
+
+    // ORD-UNIT-024
+    it('should throw BadRequestException when confirming a COD order not in PENDING_CONFIRMATION', async () => {
+      const order = {
+        id: 'order-1',
+        paymentMethod: PaymentMethod.COD,
+        status: OrderStatus.CONFIRMED,
+        shopId: 'shop-1',
+        items: [],
+      };
+      const shop = { id: 'shop-1', userId: 'seller-1' };
+
+      mockQueryBuilder.getOne.mockResolvedValue(order);
+      mockEntityManager.find.mockResolvedValue([]);
+      mockEntityManager.findOne.mockResolvedValue(shop);
+
+      await expect(service.confirmOrder('order-1', 'seller-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    // ORD-UNIT-025
+    it('should throw BadRequestException when confirming an online order not in PAID_PENDING_CONFIRMATION', async () => {
+      const order = {
+        id: 'order-1',
+        paymentMethod: PaymentMethod.VNPAY,
+        status: OrderStatus.PENDING_PAYMENT,
+        shopId: 'shop-1',
+        items: [],
+      };
+      const shop = { id: 'shop-1', userId: 'seller-1' };
+
+      mockQueryBuilder.getOne.mockResolvedValue(order);
+      mockEntityManager.find.mockResolvedValue([]);
+      mockEntityManager.findOne.mockResolvedValue(shop);
+
+      await expect(service.confirmOrder('order-1', 'seller-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    // ORD-UNIT-030
+    it('should throw NotFoundException when order not found during seller lock', async () => {
+      mockQueryBuilder.getOne.mockResolvedValue(null);
+
+      await expect(service.confirmOrder('order-x', 'seller-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    // ORD-UNIT-031
+    it('should throw ForbiddenException when seller does not own the shop of the order', async () => {
+      const order = {
+        id: 'order-1',
+        paymentMethod: PaymentMethod.COD,
+        status: OrderStatus.PENDING_CONFIRMATION,
+        shopId: 'shop-1',
+        items: [],
+      };
+      const shop = { id: 'shop-1', userId: 'other-seller' };
+
+      mockQueryBuilder.getOne.mockResolvedValue(order);
+      mockEntityManager.find.mockResolvedValue([]);
+      mockEntityManager.findOne.mockResolvedValue(shop);
+
+      await expect(service.confirmOrder('order-1', 'seller-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
   });
 
   describe('Order State Transitions', () => {
@@ -291,6 +517,14 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
       setupOrderMock(OrderStatus.DELIVERED);
       const res = await service.completeOrder('order-1', 'seller-1');
       expect(res.status).toBe(OrderStatus.COMPLETED);
+    });
+
+    // ORD-UNIT-032
+    it('should throw BadRequestException for an invalid state transition', async () => {
+      setupOrderMock(OrderStatus.PENDING_CONFIRMATION);
+      await expect(
+        service.markPreparing('order-1', 'seller-1'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -389,6 +623,20 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
         service.cancelOrderByCustomer('order-1', 'user-1'),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    // ORD-UNIT-026
+    it('should throw BadRequestException when customer cancels an order not pending confirmation', async () => {
+      const order = {
+        id: 'order-1',
+        userId: 'user-1',
+        status: OrderStatus.CONFIRMED,
+      };
+      mockQueryBuilder.getOne.mockResolvedValue(order);
+
+      await expect(
+        service.cancelOrderByCustomer('order-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('findById', () => {
@@ -410,6 +658,20 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
       await expect(service.findById('order-1', 'user-1')).rejects.toThrow(
         ForbiddenException,
       );
+    });
+
+    // ORD-UNIT-027
+    it('should return order detail when found and owned by the user', async () => {
+      const order = {
+        id: 'order-1',
+        userId: 'user-1',
+        items: [],
+        payment: null,
+      };
+      mockOrderRepository.findOne.mockResolvedValue(order);
+
+      const result = await service.findById('order-1', 'user-1');
+      expect(result.id).toBe('order-1');
     });
   });
 
@@ -438,6 +700,52 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
       expect(res.meta.totalItems).toBe(1);
       expect(res.items.length).toBe(1);
     });
+
+    // ORD-UNIT-028
+    it('should throw NotFoundException when seller has no shop', async () => {
+      mockShopRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.getShopOrders('seller-x', { page: 1, limit: 10 }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    // ORD-UNIT-029
+    it('should apply status filter and map order items when present', async () => {
+      mockShopRepository.findOne.mockResolvedValue({ id: 'shop-1' });
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([
+        [
+          {
+            id: 'order-1',
+            items: [
+              {
+                id: 'item-1',
+                variantId: 'v-1',
+                productNameSnapshot: 'Prod 1',
+                quantity: 1,
+                priceAtOrder: '100000',
+                lineTotal: '100000',
+              },
+            ],
+            user: { id: 'user-1', fullName: 'A', phone: '090' },
+          },
+        ],
+        1,
+      ]);
+
+      const query: SellerOrderListQueryDto = {
+        page: 1,
+        limit: 10,
+        status: OrderStatus.CONFIRMED,
+      };
+      const res = await service.getShopOrders('seller-1', query);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'order.status = :status',
+        { status: OrderStatus.CONFIRMED },
+      );
+      expect(res.items[0].items.length).toBe(1);
+    });
   });
 
   describe('adminFindAll', () => {
@@ -447,7 +755,6 @@ describe('OrdersService (Full Coverage Unit Tests)', () => {
         1,
       ]);
 
-      // Không dùng kiểu `unknown as Date` nữa, dùng trực tiếp string hợp lệ với DTO
       const query: AdminOrderQueryDto = {
         page: 1,
         limit: 10,

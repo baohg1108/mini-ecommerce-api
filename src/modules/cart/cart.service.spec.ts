@@ -131,6 +131,18 @@ describe('CartService (Full Coverage Unit Tests)', () => {
       );
     });
 
+    it('CART-UNIT-019: should throw NotFoundException if variant disappears between lock and relation load (race condition)', async () => {
+      // lock query succeeds...
+      mockQueryBuilder.getOne.mockResolvedValue({ id: 'var-1' });
+      // ...but the subsequent findOne with relations returns null
+      mockEntityManager.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.addToCart('user-1', dto)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockEntityManager.findOne).toHaveBeenCalledTimes(1);
+    });
+
     it('should throw NotFoundException if product is inactive', async () => {
       mockQueryBuilder.getOne.mockResolvedValue({ id: 'var-1' });
       mockEntityManager.findOne.mockResolvedValue({
@@ -196,6 +208,46 @@ describe('CartService (Full Coverage Unit Tests)', () => {
       expect(result.items.length).toBe(1);
       expect(mockEntityManager.save).toHaveBeenCalledTimes(2);
     });
+
+    it('CART-UNIT-020: should accumulate quantity when the variant already exists in the cart', async () => {
+      mockQueryBuilder.getOne.mockResolvedValue({
+        id: 'var-1',
+        availableQty: 10,
+      });
+
+      const existingCart = { id: 'cart-1', userId: 'user-1' };
+      const existingCartItem = {
+        id: 'item-existing',
+        cartId: 'cart-1',
+        variantId: 'var-1',
+        quantity: 2,
+      };
+
+      mockEntityManager.findOne
+        .mockResolvedValueOnce(validVariantWithRelations) // variantWithRelations
+        .mockResolvedValueOnce(existingCart) // cart already exists
+        .mockResolvedValueOnce(existingCartItem); // cartItem already exists
+
+      mockEntityManager.find.mockResolvedValue([
+        {
+          id: 'item-existing',
+          variantId: 'var-1',
+          quantity: 4,
+          variant: validVariantWithRelations,
+        },
+      ]);
+
+      const result = await service.addToCart('user-1', dto); // dto.quantity = 2
+
+      expect(existingCartItem.quantity).toBe(4); // 2 (current) + 2 (added)
+      expect(mockEntityManager.save).toHaveBeenCalledWith(
+        CartItem,
+        expect.objectContaining({ quantity: 4 }),
+      );
+      // cart was already found -> should NOT call save for Cart creation
+      expect(mockEntityManager.save).toHaveBeenCalledTimes(1);
+      expect(result.items[0].quantity).toBe(4);
+    });
   });
 
   describe('updateCartItem', () => {
@@ -222,6 +274,35 @@ describe('CartService (Full Coverage Unit Tests)', () => {
       await expect(
         service.updateCartItem('user-1', 'item-1', updateDto),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('CART-UNIT-021: should throw NotFoundException if variant no longer exists when locking for update', async () => {
+      mockEntityManager.findOne.mockResolvedValue({
+        id: 'item-1',
+        variantId: 'var-1',
+        cart: { id: 'cart-1', userId: 'user-1' },
+      });
+      mockQueryBuilder.getOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateCartItem('user-1', 'item-1', updateDto),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('CART-UNIT-022: should throw BadRequestException if requested quantity exceeds stock', async () => {
+      mockEntityManager.findOne.mockResolvedValue({
+        id: 'item-1',
+        variantId: 'var-1',
+        cart: { id: 'cart-1', userId: 'user-1' },
+      });
+      mockQueryBuilder.getOne.mockResolvedValue({
+        id: 'var-1',
+        availableQty: 3,
+      });
+
+      await expect(
+        service.updateCartItem('user-1', 'item-1', { quantity: 5 }),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should update cart item successfully', async () => {
@@ -259,6 +340,15 @@ describe('CartService (Full Coverage Unit Tests)', () => {
       expect(mockEntityManager.remove).toHaveBeenCalled();
     });
 
+    it('CART-UNIT-023: should throw NotFoundException if cart item does not exist', async () => {
+      mockEntityManager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.removeCartItem('user-1', 'non-existent-item'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockEntityManager.remove).not.toHaveBeenCalled();
+    });
+
     it('should throw ForbiddenException if unauthorized', async () => {
       mockEntityManager.findOne.mockResolvedValue({
         id: 'item-1',
@@ -277,6 +367,22 @@ describe('CartService (Full Coverage Unit Tests)', () => {
         userId: 'user-1',
       });
       await service.clearCart('user-1');
+      expect(mockCartItemRepository.delete).toHaveBeenCalledWith({
+        cartId: 'cart-1',
+      });
+    });
+  });
+
+  describe('getOrCreateCart', () => {
+    it('CART-UNIT-024: should create a new cart automatically when user has none yet', async () => {
+      mockCartRepository.findOne.mockResolvedValue(null);
+
+      await service.clearCart('user-1');
+
+      expect(mockCartRepository.create).toHaveBeenCalledWith({
+        userId: 'user-1',
+      });
+      expect(mockCartRepository.save).toHaveBeenCalled();
       expect(mockCartItemRepository.delete).toHaveBeenCalledWith({
         cartId: 'cart-1',
       });
